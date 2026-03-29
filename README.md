@@ -2,6 +2,8 @@
 
 43 production Claude Code hooks for automated code quality, safety enforcement, and workflow automation — built and battle-tested while vibe-coding daily.
 
+Code quality degrades gradually — bad commits, skipped checks, inconsistent patterns. These 43 hooks enforce your standards automatically on every Claude operation, before problems accumulate.
+
 ## What this is
 
 Claude Code hooks are shell commands that fire at specific events in your coding session:

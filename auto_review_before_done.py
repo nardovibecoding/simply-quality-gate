@@ -61,14 +61,17 @@ def load_edits(session_id: str | None) -> list:
 
 def check_caller_impact(code_edits: list) -> list[str]:
     """Warn about public functions that are referenced in other files."""
+    # Skip generic names that appear in every hook (hook interface boilerplate)
+    _SKIP_FUNCS = {"check", "action", "main", "run", "setup", "teardown", "handler"}
     warnings = []
     try:
         for e in code_edits:
             fp = Path(e["file"])
             if fp.suffix != ".py":
                 continue
-            # Only public functions
-            funcs = [f for f in e.get("functions", []) if not f.startswith("_")][:3]
+            # Only non-generic public functions
+            funcs = [f for f in e.get("functions", [])
+                     if not f.startswith("_") and f not in _SKIP_FUNCS][:3]
             if not funcs:
                 continue
             # Find project root

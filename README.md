@@ -1,4 +1,4 @@
-# claude-code-hooks
+# quality-gate
 
 43 production Claude Code hooks for automated code quality, safety enforcement, and workflow automation — built and battle-tested while vibe-coding daily.
 
@@ -95,7 +95,7 @@ These hooks add a persistent enforcement layer that runs silently in the backgro
 
 1. Clone into `~/.claude/hooks/`:
 ```bash
-git clone https://github.com/nardovibecoding/claude-code-hooks ~/.claude/hooks
+git clone https://github.com/nardovibecoding/quality-gate ~/.claude/hooks
 ```
 
 2. Configure your `~/.claude/settings.json` — see [`settings.example.json`](settings.example.json)

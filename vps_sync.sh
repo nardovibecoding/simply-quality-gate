@@ -59,11 +59,14 @@ if [ -d "$PM_DIR/.git" ]; then
       git stash pop -q 2>/dev/null; \
       rm -f /tmp/pm-sync-bundle.git' 2>/dev/null
 
-    # Rebuild if TS files changed
-    CHANGED=$(cd "$PM_DIR" && git diff --name-only "$REMOTE_HEAD..HEAD" -- '*.ts' 2>/dev/null | head -1)
+    # Rebuild + restart scanner if TS/script files changed
+    CHANGED=$(cd "$PM_DIR" && git diff --name-only "$REMOTE_HEAD..HEAD" -- '*.ts' '*.sh' 2>/dev/null | head -1)
     if [ -n "$CHANGED" ]; then
-      log "PM: TS files changed, rebuilding on VPS"
-      ssh "$VPS" 'cd ~/prediction-markets && npm run build 2>/dev/null' &
+      log "PM: code changed, rebuilding + restarting scanner on VPS"
+      ssh "$VPS" 'cd ~/prediction-markets && npm run build 2>/dev/null && \
+        tmux kill-session -t scanner 2>/dev/null; sleep 1; \
+        tmux new-session -d -s scanner "bash /home/bernard/prediction-markets/scripts/start-scanner.sh" && \
+        echo "Scanner restarted with new code"' 2>/dev/null &
     fi
 
     log "PM: synced to $LOCAL_HEAD"

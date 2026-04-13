@@ -89,4 +89,13 @@ if [ -d "$WIKI_DIR" ]; then
     2>/dev/null && log "Wiki: synced" || log "Wiki: rsync failed"
 fi
 
+# ─── 4. Claude scripts (rsync) ───────────────────────────────────────
+SCRIPTS_DIR="$HOME/.claude/scripts/"
+if [ -d "$SCRIPTS_DIR" ]; then
+  rsync -az --exclude='__pycache__' \
+    "$SCRIPTS_DIR" \
+    "$VPS:~/.claude/scripts/" \
+    2>/dev/null && log "Scripts: synced" || log "Scripts: rsync failed"
+fi
+
 log "Sync complete"

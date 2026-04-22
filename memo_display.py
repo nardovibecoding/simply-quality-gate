@@ -137,17 +137,43 @@ def main():
     # Save story state
     _save_story_state(story_state)
 
-    # Delete general memos after showing
+    # Delete general memos after showing + git rm so they don't come back
     os.makedirs(DONE_DIR, exist_ok=True)
+    git_rm_paths = []
     for path in files_to_delete:
         try:
+            rel = os.path.relpath(path, BOT_REPO)
+            # git rm first (while file still exists)
+            subprocess.run(
+                ["git", "-C", BOT_REPO, "rm", "--cached", "--quiet", rel],
+                capture_output=True, timeout=3
+            )
+            git_rm_paths.append(rel)
+            # Then move to done/
             os.rename(path, os.path.join(DONE_DIR, os.path.basename(path)))
+        except Exception:
+            pass
+    # Commit + push the removals
+    if git_rm_paths:
+        try:
+            subprocess.run(
+                ["git", "-C", BOT_REPO, "commit", "-m", "memo: shown and archived"],
+                capture_output=True, timeout=5
+            )
+            subprocess.run(
+                ["git", "-C", BOT_REPO, "push", "--quiet"],
+                capture_output=True, timeout=10
+            )
         except Exception:
             pass
 
     if output_lines:
+        msg = "\n".join(output_lines)
         print(json.dumps({
-            "additionalContext": "\n".join(output_lines)
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": msg
+            }
         }))
 
 

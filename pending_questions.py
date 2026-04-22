@@ -9,6 +9,7 @@ PENDING_FILE = Path("/tmp/claude_pending_questions.json")
 STATUSLINE_FILE = Path("/tmp/claude_statusline.json")
 MAX_PENDING = 5
 REMIND_AFTER = 3  # turns before reminding
+EXPIRE_TURNS = 15  # auto-expire after this many turns unanswered
 
 # Patterns that indicate a decision/action question directed at user
 QUESTION_PATTERNS = re.compile(
@@ -135,6 +136,9 @@ def main():
                 if q_text not in existing_texts:
                     pending.append({"text": q_text, "turns": 0})
                     existing_texts.add(q_text)
+
+    # Expire old questions (turn-based TTL)
+    pending = [q for q in pending if q.get("turns", 0) < EXPIRE_TURNS]
 
     # Cap at MAX_PENDING, drop oldest
     if len(pending) > MAX_PENDING:

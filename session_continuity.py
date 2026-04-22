@@ -10,7 +10,6 @@ Uses a done marker to avoid re-injecting every message. Resets when context
 goes above 15% (mid-session), so it fires again after next /clear.
 """
 import json
-import re
 import sys
 import time
 from datetime import datetime
@@ -88,20 +87,23 @@ def get_pending_questions() -> str:
 
 
 def get_pending_memory_items() -> str:
-    """Scan memory files for entries marked pending/TODO."""
+    """Read pending items from pending_actions.json (single source of truth).
+
+    Previously grepped all memory files for 'pending' keyword — produced stale
+    false positives from point-in-time convo summaries. Now uses the structured
+    pending_actions.json that hooks actively maintain.
+    """
+    actions_file = Path("/tmp/claude_pending_actions.json")
+    if not actions_file.exists():
+        return ""
     try:
-        pending = []
-        for f in MEMORY_DIR.glob("*.md"):
-            try:
-                text = f.read_text(errors="ignore")
-                if re.search(r"\bpending\b|\bTODO\b|fix pending|not yet confirmed", text, re.IGNORECASE):
-                    pending.append(f.stem)
-            except Exception:
-                pass
-        if not pending:
+        data = json.loads(actions_file.read_text())
+        active = [a for a in data if a.get("status") == "pending"]
+        if not active:
             return ""
-        return f"Memory items still marked pending: {', '.join(pending[:10])}"
-    except Exception:
+        bullets = "\n".join(f"  - {a['summary']}" for a in active[:5])
+        return f"Pending actions:\n{bullets}"
+    except (json.JSONDecodeError, OSError):
         return ""
 
 

@@ -322,19 +322,32 @@ def extract_sy_pairs(jsonl_path, existing_keys):
     return new_pairs, None
 
 
-def append_pairs(pairs):
-    """Append new pairs to SY_PAIRS_FILE."""
+def _atomic_append(path, content: str) -> None:
+    """flock-protected append so parallel sessions never interleave writes."""
+    import fcntl
     NARDO_META.mkdir(parents=True, exist_ok=True)
-    with open(SY_PAIRS_FILE, "a", encoding="utf-8") as f:
-        for p in pairs:
-            f.write(json.dumps(p) + "\n")
+    with open(path, "a", encoding="utf-8") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            f.write(content)
+            f.flush()
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+def append_pairs(pairs):
+    """Append new pairs to SY_PAIRS_FILE (flock-safe)."""
+    if not pairs:
+        return
+    buf = "".join(json.dumps(p) + "\n" for p in pairs)
+    _atomic_append(SY_PAIRS_FILE, buf)
 
 
 def append_shapes(shapes):
-    NARDO_META.mkdir(parents=True, exist_ok=True)
-    with open(SHAPE_FILE, "a", encoding="utf-8") as f:
-        for s in shapes:
-            f.write(json.dumps(s) + "\n")
+    if not shapes:
+        return
+    buf = "".join(json.dumps(s) + "\n" for s in shapes)
+    _atomic_append(SHAPE_FILE, buf)
 
 
 def load_existing_shape_keys(filepath):
@@ -397,11 +410,14 @@ def extract_response_shapes(jsonl_path, existing_keys):
             continue
 
         preceding = ""
-        for j in range(i - 1, max(i - 10, -1), -1):
+        # Walk back up to 30 turns to skip tool-only assistant turns (tool_use blocks, no text).
+        for j in range(i - 1, max(i - 30, -1), -1):
             pt = parsed[j]
-            if pt["role"] == "assistant" and pt["text"].strip():
-                preceding = pt["text"].strip()[:300]
-                break
+            if pt["role"] == "assistant":
+                txt = pt["text"].strip()
+                if txt:
+                    preceding = txt[:300]
+                    break
 
         ts_epoch = int(time.time())
         if turn["ts_str"]:

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "last_rebuilt_ts": 1776939858,
+  "last_rebuilt_ts": 1776941398,
   "buckets": {
     "scope-and-proceed": {
       "description": "Scope/plan a phase or task, then proceed",
@@ -16,6 +16,17 @@
         "design",
         "outline",
         "spec"
+      ],
+      "forbidden_conjunctions": [
+        "push",
+        "deploy",
+        "vps",
+        "ssh",
+        "prod",
+        "origin",
+        "restart",
+        "systemctl",
+        "pkill"
       ],
       "accept_count": 22,
       "total_count": 22
@@ -57,8 +68,8 @@
         "lint",
         "test"
       ],
-      "accept_count": 4,
-      "total_count": 6
+      "accept_count": 5,
+      "total_count": 7
     },
     "wait-for-bg": {
       "description": "Wait for background agent/task to complete",

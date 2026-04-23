@@ -136,11 +136,16 @@ def main():
 
     try:
         db = load_db()
-    except SystemExit:
+    except (SystemExit, json.JSONDecodeError, OSError):
         passthrough()
-    bucket = classify(sy_text, db)
+    try:
+        bucket = classify(sy_text, db)
+    except Exception:
+        passthrough()
     if bucket is None:
         passthrough()  # gated (hard-gate or forbidden_conjunction) or unknown bucket
+    if bucket.startswith("user_rule:"):
+        passthrough()  # tier-1 user rule match — delegate to human, not auto-inject
 
     b = db["buckets"][bucket]
     p = p_smoothed(b["accept_count"], b["total_count"])

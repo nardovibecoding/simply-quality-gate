@@ -45,6 +45,8 @@ HARD_GATES = [re.compile(p, re.IGNORECASE) for p in [
     r"new project|new repo|init.*project",
     r"CLAUDE\.md.*rule|change.*permission|security.*policy",
     r"tone|voice|naming|emoji|ui\s*copy|copy\s*ui",
+    r"systemctl|pkill|kill.*process",
+    r"hook.*disable|disable.*hook|bypass.*hook",
 ]]
 
 
@@ -52,6 +54,58 @@ def load_db():
     if not DB_FILE.exists():
         sys.exit(f"sy_scorer_db.json missing at {DB_FILE}")
     return json.loads(DB_FILE.read_text())
+
+
+def load_user_rules():
+    """Parse user_rules.yaml (minimal subset parser — avoids PyYAML dep).
+    Returns list of dicts with keys: name, trigger_regex, action, match_regex, confidence.
+    Silently returns [] on parse failure (never block pipeline).
+    """
+    if not USER_RULES_FILE.exists():
+        return []
+    rules = []
+    try:
+        text = USER_RULES_FILE.read_text()
+    except OSError:
+        return []
+    # Minimal YAML parser: tokenize top-level "- name:" blocks.
+    blocks = re.split(r"^\s*-\s+name:\s*", text, flags=re.MULTILINE)[1:]
+    for blk in blocks:
+        r = {"name": "", "trigger_regex": None, "action": "", "match_regex": None, "confidence": 0.0}
+        first_line, _, rest = blk.partition("\n")
+        r["name"] = first_line.strip()
+        for line in rest.splitlines():
+            s = line.strip()
+            if s.startswith("regex_open:"):
+                v = s.split(":", 1)[1].strip().strip('"').strip("'")
+                try:
+                    r["trigger_regex"] = re.compile(v)
+                except re.error:
+                    r["trigger_regex"] = None
+            elif s.startswith("action:"):
+                r["action"] = s.split(":", 1)[1].strip()
+            elif s.startswith("match_regex:"):
+                v = s.split(":", 1)[1].strip().strip('"').strip("'")
+                try:
+                    r["match_regex"] = re.compile(v)
+                except re.error:
+                    r["match_regex"] = None
+            elif s.startswith("confidence:"):
+                try:
+                    r["confidence"] = float(s.split(":", 1)[1].strip())
+                except ValueError:
+                    r["confidence"] = 0.0
+        if r["name"] and r["trigger_regex"]:
+            rules.append(r)
+    return rules
+
+
+def eval_user_rules(text, rules):
+    """Return first matching rule dict or None. Hard-gates are checked separately by caller."""
+    for r in rules:
+        if r["trigger_regex"] and r["trigger_regex"].search(text):
+            return r
+    return None
 
 
 def save_db(db):
@@ -68,10 +122,23 @@ def is_hard_gated(text):
     return any(g.search(text) for g in HARD_GATES)
 
 
-def classify(text, db):
-    """Return bucket name or None. Enforces hard-gates + forbidden_conjunctions."""
+def classify(text, db, user_rules=None):
+    """Return bucket name or None. Enforces hard-gates + forbidden_conjunctions.
+
+    Two-tier: user_rules (tier-1, high-confidence override) evaluated FIRST, then
+    statistical bucket match. Hard-gates override both tiers. A tier-1 rule hit
+    is returned as the synthetic bucket name `user_rule:<name>` so downstream
+    logging sees it. Callers that don't pass user_rules behave exactly as
+    before (backward-compat).
+    """
     if is_hard_gated(text):
         return None
+
+    if user_rules is not None:
+        hit = eval_user_rules(text, user_rules)
+        if hit and hit["confidence"] >= 0.85:
+            return f"user_rule:{hit['name']}"
+
     tl = text.lower()
     for name, bucket in db["buckets"].items():
         if any(kw in tl for kw in bucket["keywords"]):
@@ -126,8 +193,9 @@ def print_stats(db):
     pairs_file_size = SY_PAIRS_FILE.stat().st_size if SY_PAIRS_FILE.exists() else 0
     last = db.get("last_rebuilt_ts", 0)
     last_str = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(last)) if last else "never"
+    rules = load_user_rules()
     print(f"sy_scorer v{SCORER_VERSION}  rebuilt: {last_str}  source: sy_pairs.jsonl ({pairs_file_size} B)")
-    print(f"Thresholds: P>={P_THRESHOLD}  n>={MIN_SAMPLE}")
+    print(f"Thresholds: P>={P_THRESHOLD}  n>={MIN_SAMPLE}  user_rules: {len(rules)} loaded")
     print()
     print(f"{'BUCKET':24s} {'n':>5s} {'accept':>7s} {'P':>6s} {'eligible':>9s}")
     print("-" * 60)

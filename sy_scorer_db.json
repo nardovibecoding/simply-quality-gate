@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "last_rebuilt_ts": 1776939858,
+  "buckets": {
+    "scope-and-proceed": {
+      "description": "Scope/plan a phase or task, then proceed",
+      "keywords": [
+        "scope",
+        "scoping",
+        "plan",
+        "phase",
+        "proceed",
+        "fire next",
+        "dispatch",
+        "architect",
+        "design",
+        "outline",
+        "spec"
+      ],
+      "accept_count": 22,
+      "total_count": 22
+    },
+    "commit-only": {
+      "description": "git commit local changes (no push)",
+      "keywords": [
+        "commit",
+        "save",
+        "git commit",
+        "checkpoint",
+        "record",
+        "preserve",
+        "snapshot"
+      ],
+      "forbidden_conjunctions": [
+        "push",
+        "deploy",
+        "vps",
+        "sync",
+        "origin"
+      ],
+      "accept_count": 6,
+      "total_count": 6
+    },
+    "audit-spawn": {
+      "description": "Spawn an audit or review agent",
+      "keywords": [
+        "audit",
+        "review",
+        "ship audit",
+        "strict-plan",
+        "check",
+        "verify",
+        "scan",
+        "inspect",
+        "examine",
+        "validate",
+        "lint",
+        "test"
+      ],
+      "accept_count": 4,
+      "total_count": 6
+    },
+    "wait-for-bg": {
+      "description": "Wait for background agent/task to complete",
+      "keywords": [
+        "wait",
+        "wait on bg",
+        "wait for",
+        "blocking",
+        "slots full",
+        "queue",
+        "pending",
+        "while waiting",
+        "hold",
+        "defer",
+        "async"
+      ],
+      "accept_count": 1,
+      "total_count": 1
+    },
+    "memory-update": {
+      "description": "Update memory/file-map/wiki",
+      "keywords": [
+        "memory",
+        "file-map",
+        "wiki",
+        "MEMORY.md",
+        "update doc",
+        "nardoworld",
+        "lesson",
+        "rollup"
+      ],
+      "accept_count": 0,
+      "total_count": 0
+    },
+    "skill-invoke": {
+      "description": "Invoke an existing skill (/ship, /bus, /s)",
+      "keywords": [
+        "/ship",
+        "/bus",
+        "/s ",
+        "/combo",
+        "/lint",
+        "/skill",
+        "skill",
+        "run ship",
+        "use bus",
+        "invoke",
+        "trigger"
+      ],
+      "accept_count": 2,
+      "total_count": 2
+    },
+    "config-tweak-local": {
+      "description": "Edit local config file (mac-side, non-VPS, non-wallet)",
+      "keywords": [
+        "config",
+        "tweak",
+        "edit",
+        "patch",
+        "settings",
+        "CLAUDE.md",
+        "param",
+        "env",
+        "flag",
+        "toggle",
+        "enable",
+        "disable"
+      ],
+      "forbidden_conjunctions": [
+        "vps",
+        "deploy",
+        "push",
+        "wallet",
+        "key"
+      ],
+      "accept_count": 2,
+      "total_count": 2
+    }
+  }
+}

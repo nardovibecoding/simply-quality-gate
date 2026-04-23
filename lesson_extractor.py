@@ -533,6 +533,16 @@ def main():
     write_status(session_id, len(pairs), shape_err, 1, len(shapes))
     print(f"lesson_extractor: {len(pairs)} new SY, {len(shapes)} new shape(s) from {Path(jsonl_path).name}")
 
+    if pairs:
+        try:
+            import subprocess
+            subprocess.Popen(
+                [sys.executable, str(Path(__file__).parent / "sy_scorer.py"), "--rebuild"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     main()

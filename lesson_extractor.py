@@ -14,7 +14,6 @@ No LLM calls. No external deps beyond stdlib.
 """
 
 import json
-import os
 import re
 import sys
 import time
@@ -23,6 +22,7 @@ from pathlib import Path
 # --- Paths ---
 NARDO_META = Path.home() / "NardoWorld" / "meta"
 SY_PAIRS_FILE = NARDO_META / "sy_pairs.jsonl"
+SHAPE_FILE = NARDO_META / "response_shape.jsonl"
 STATUS_FILE = Path("/tmp/s_extractor_last_run.json")
 STATUSLINE_FILE = Path("/tmp/claude_statusline.json")
 PROJECTS_DIR = Path.home() / ".claude" / "projects" / "-Users-bernard"
@@ -87,6 +87,30 @@ BUCKET_PATTERNS = {
     ),
 }
 
+# Response-shape (Job B) signal patterns — per plan §3 Slice 4
+SHAPE_PATTERNS = [
+    ("pivot",         re.compile(r"actually,?\s+let'?s|change of plan|forget that|new direction|scrap that", re.IGNORECASE)),
+    ("time_pressure", re.compile(r"\b(quick|fast|hurry|asap|urgent|need it now|running out)\b", re.IGNORECASE)),
+    ("pushback",      re.compile(r"^(no[,\s]|nah|nope)|that'?s?\s+wrong|disagree|not quite|that doesn'?t", re.IGNORECASE)),
+    ("clarification", re.compile(r"^(wait\b|actually\b|i mean\b|you said\b|but earlier|hold on)", re.IGNORECASE)),
+    ("question",      re.compile(r"\?(?:\s|$)|\?$|^(how do|why did|what if|can we)\b", re.IGNORECASE)),
+    ("dismissal",     re.compile(r"^(skip|not now|maybe later|no thanks|ignore)\b", re.IGNORECASE)),
+    ("satisfaction",  re.compile(r"\b(perfect|exactly|that'?s? it|love it|nailed it)\b", re.IGNORECASE)),
+    ("elaboration",   re.compile(r"^(also\b|additionally\b|and what about|one more|on top of)", re.IGNORECASE)),
+    ("ack",           re.compile(r"^(ok|okay|got it|yes|sy|lets go|let'?s go|alright|makes sense|understood)\b", re.IGNORECASE)),
+]
+
+def classify_shape(user_text):
+    """Return signal_type name or None. Order matters: specific before generic."""
+    t = user_text.strip()
+    if not t:
+        return None
+    for name, pat in SHAPE_PATTERNS:
+        if pat.search(t):
+            return name
+    return None
+
+
 # Hard-gate patterns — never auto-classify these (future Slice 2+ use)
 HARD_GATES = [
     re.compile(p, re.IGNORECASE) for p in [
@@ -129,6 +153,8 @@ def is_human_text(text):
         "<local-command", "<command-name", "<command-message",
         "<local-command-stdout", "[Request interrupted",
         "<tool-use", "<function_calls>",
+        "Base directory for this skill:",
+        "<system-reminder",
     )
     return not any(t.startswith(p) for p in skip_prefixes)
 
@@ -304,7 +330,104 @@ def append_pairs(pairs):
             f.write(json.dumps(p) + "\n")
 
 
-def write_status(session_id, pairs_extracted, error=None, files_scanned=1):
+def append_shapes(shapes):
+    NARDO_META.mkdir(parents=True, exist_ok=True)
+    with open(SHAPE_FILE, "a", encoding="utf-8") as f:
+        for s in shapes:
+            f.write(json.dumps(s) + "\n")
+
+
+def load_existing_shape_keys(filepath):
+    keys = set()
+    if not filepath.exists():
+        return keys
+    with open(filepath) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                sid = obj.get("session_id", "")
+                tidx = obj.get("turn_idx", -1)
+                if sid and tidx >= 0:
+                    keys.add((sid, tidx))
+            except json.JSONDecodeError:
+                pass
+    return keys
+
+
+def extract_response_shapes(jsonl_path, existing_keys):
+    """Scan human turns, classify response shape, pair with preceding assistant snippet."""
+    path = Path(jsonl_path)
+    if not path.exists():
+        return [], f"file not found: {jsonl_path}"
+    try:
+        turns = parse_jsonl(path)
+    except Exception as e:
+        return [], f"parse error: {e}"
+
+    parsed = []
+    for line_idx, obj in turns:
+        msg = obj.get("message", {})
+        parsed.append({
+            "line_idx": line_idx,
+            "type": obj.get("type", ""),
+            "role": msg.get("role", ""),
+            "text": extract_text(msg.get("content", "")),
+            "session_id": obj.get("sessionId", ""),
+            "ts_str": obj.get("timestamp", ""),
+        })
+
+    new_shapes = []
+    for i, turn in enumerate(parsed):
+        if turn["role"] != "user" or turn["type"] != "user":
+            continue
+        text = turn["text"]
+        if not is_human_text(text):
+            continue
+        signal = classify_shape(text)
+        if not signal:
+            continue
+
+        turn_idx = turn["line_idx"]
+        session_id = turn["session_id"] or path.stem
+        key = (session_id, turn_idx)
+        if key in existing_keys:
+            continue
+
+        preceding = ""
+        for j in range(i - 1, max(i - 10, -1), -1):
+            pt = parsed[j]
+            if pt["role"] == "assistant" and pt["text"].strip():
+                preceding = pt["text"].strip()[:300]
+                break
+
+        ts_epoch = int(time.time())
+        if turn["ts_str"]:
+            try:
+                import datetime
+                dt = datetime.datetime.fromisoformat(turn["ts_str"].replace("Z", "+00:00"))
+                ts_epoch = int(dt.timestamp())
+            except Exception:
+                pass
+
+        new_shapes.append({
+            "schema_version": SCHEMA_VERSION,
+            "ts": ts_epoch,
+            "session_id": session_id,
+            "turn_idx": turn_idx,
+            "signal_type": signal,
+            "snippet": text.strip()[:300],
+            "preceding_assistant_snippet": preceding,
+            "extractor_version": EXTRACTOR_VERSION,
+        })
+        existing_keys.add(key)
+
+    return new_shapes, None
+
+
+def write_status(session_id, pairs_extracted, error=None, files_scanned=1, shapes_extracted=0):
     """Write status file for observability (visible failure detection)."""
     status = {
         "ts": int(time.time()),
@@ -312,7 +435,9 @@ def write_status(session_id, pairs_extracted, error=None, files_scanned=1):
         "session_id": session_id,
         "files_scanned": files_scanned,
         "pairs_extracted": pairs_extracted,
+        "shapes_extracted": shapes_extracted,
         "sy_pairs_total": count_lines(SY_PAIRS_FILE),
+        "response_shape_total": count_lines(SHAPE_FILE),
         "error": error,
         "status": "error" if error else "ok",
         "extractor_version": EXTRACTOR_VERSION,
@@ -354,23 +479,30 @@ def main():
     args = sys.argv[1:]
 
     if "--full-rescan" in args:
-        # Rescan all jsonl files
         existing_keys = load_existing_keys(SY_PAIRS_FILE)
+        existing_shape_keys = load_existing_shape_keys(SHAPE_FILE)
         all_pairs = []
+        all_shapes = []
         files = list(PROJECTS_DIR.glob("*.jsonl"))
         errors = []
         for fp in files:
             pairs, err = extract_sy_pairs(str(fp), existing_keys)
             if err:
-                errors.append(f"{fp.name}: {err}")
+                errors.append(f"{fp.name}: sy:{err}")
             else:
                 all_pairs.extend(pairs)
+            shapes, err = extract_response_shapes(str(fp), existing_shape_keys)
+            if err:
+                errors.append(f"{fp.name}: shape:{err}")
+            else:
+                all_shapes.extend(shapes)
         if all_pairs:
             append_pairs(all_pairs)
-        session_id = "full-rescan"
+        if all_shapes:
+            append_shapes(all_shapes)
         error_msg = "; ".join(errors) if errors else None
-        write_status(session_id, len(all_pairs), error_msg, len(files))
-        print(f"Full rescan: {len(files)} files, {len(all_pairs)} new pairs extracted")
+        write_status("full-rescan", len(all_pairs), error_msg, len(files), len(all_shapes))
+        print(f"Full rescan: {len(files)} files, {len(all_pairs)} SY pairs, {len(all_shapes)} shapes")
         return
 
     if "--from-statusline" in args or not args:
@@ -393,11 +525,13 @@ def main():
     if pairs:
         append_pairs(pairs)
 
-    write_status(session_id, len(pairs))
-    if pairs:
-        print(f"lesson_extractor: {len(pairs)} new SY pair(s) from {Path(jsonl_path).name}")
-    else:
-        print(f"lesson_extractor: 0 new pairs (already captured or no [SY] in session)")
+    existing_shape_keys = load_existing_shape_keys(SHAPE_FILE)
+    shapes, shape_err = extract_response_shapes(jsonl_path, existing_shape_keys)
+    if shapes:
+        append_shapes(shapes)
+
+    write_status(session_id, len(pairs), shape_err, 1, len(shapes))
+    print(f"lesson_extractor: {len(pairs)} new SY, {len(shapes)} new shape(s) from {Path(jsonl_path).name}")
 
 
 if __name__ == "__main__":

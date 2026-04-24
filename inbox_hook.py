@@ -173,7 +173,12 @@ def _is_delta(brief: dict, state: dict) -> bool:
     return last_seen_ts > state["inject_ts"]
 
 
-def _format_brief(brief, idx):
+def _brief_priority(brief: dict) -> int:
+    """Map tier to sort priority integer. Lower = higher priority."""
+    return {"critical": 0, "daily": 1, "weekly": 2}.get(brief.get("tier", ""), 3)
+
+
+def _format_brief(brief, idx, also_reported_by: list = None):
     """Format a single brief for additionalContext injection."""
     lines = [
         f"[INBOX #{idx}] [{brief['tier'].upper()}] {brief['title']}",
@@ -194,6 +199,163 @@ def _format_brief(brief, idx):
     if rc > 1:
         first = brief.get("first_seen", "")
         lines.append(f"  [Recurrence: #{rc} | first_seen: {first}]")
+    # Cross-host dedup note
+    if also_reported_by:
+        lines.append(f"  (also reported by: {', '.join(also_reported_by)})")
+    return "\n".join(lines)
+
+
+def _dedup_briefs(briefs_with_path: list) -> list:
+    """
+    Deduplicate briefs across hosts.
+    Two briefs are duplicates only when they share the same 'id' field.
+    (Cross-host: same finding written to multiple hosts with the same ID.)
+    Secondarily: if both 'id' and 'message_hash' match (schema extension, optional).
+    Keep the one with earliest 'created'. Attach 'also_reported_by' list to winner.
+    Returns list of (path, brief, also_reported_by_list).
+
+    NOTE: (source_daemon, title) secondary key is intentionally omitted.
+    Many briefs share daemon+title patterns (e.g. "Issue found on london: ...")
+    but are distinct findings with unique IDs. Dedup by title would false-positive.
+    """
+    # Build index: id -> list of (path, brief)
+    by_id: dict[str, list] = {}
+
+    for path, brief in briefs_with_path:
+        bid = brief.get("id", "")
+        if bid:
+            by_id.setdefault(bid, []).append((path, brief))
+
+    # Also check message_hash if present (optional schema extension)
+    by_hash: dict[str, list] = {}
+    for path, brief in briefs_with_path:
+        mhash = brief.get("message_hash", "")
+        if mhash:
+            by_hash.setdefault(mhash, []).append((path, brief))
+
+    processed_ids: set = set()
+    result = []
+
+    for path, brief in briefs_with_path:
+        bid = brief.get("id", "")
+        if bid in processed_ids:
+            continue
+
+        # Find all duplicates: same id OR same message_hash (if present)
+        dupes_by_id = by_id.get(bid, [])
+        mhash = brief.get("message_hash", "")
+        dupes_by_hash = by_hash.get(mhash, []) if mhash else []
+
+        all_dupes = {id(b): (p, b) for p, b in dupes_by_id + dupes_by_hash}.values()
+        all_dupes = list(all_dupes)
+
+        # Mark all IDs in this cluster as processed
+        for dp, db in all_dupes:
+            processed_ids.add(db.get("id", ""))
+
+        if len(all_dupes) == 1:
+            result.append((path, brief, []))
+            continue
+
+        # Pick winner: earliest 'created'
+        def _created_ts(item):
+            p, b = item
+            val = b.get("created", "")
+            try:
+                return datetime.fromisoformat(val.replace("Z", "+00:00")).timestamp()
+            except (ValueError, AttributeError):
+                return 0.0
+
+        all_dupes_sorted = sorted(all_dupes, key=_created_ts)
+        win_path, win_brief = all_dupes_sorted[0]
+        others = [b.get("host", "?") for p, b in all_dupes_sorted[1:] if b.get("host") != win_brief.get("host")]
+        # Deduplicate host names in also_reported_by
+        seen_hosts: set = set()
+        unique_others = []
+        for h in others:
+            if h not in seen_hosts:
+                seen_hosts.add(h)
+                unique_others.append(h)
+        result.append((win_path, win_brief, unique_others))
+
+    return result
+
+
+def _format_host_grouped(selected: list, inject_label: str) -> str:
+    """
+    Render selected briefs grouped by host (mac / hel / london).
+    All 3 host sections always shown, even if 0 briefs.
+    Deduplicates across hosts. Sorts within host by priority (P0->P3) then mtime desc.
+    Appends a SUMMARY line with total + priority tallies across all hosts.
+    """
+    # Dedup first
+    deduped = _dedup_briefs(selected)
+
+    # Group by host
+    host_groups: dict[str, list] = {h: [] for h in _HOST_ORDER}
+    for path, brief, also_by in deduped:
+        host = brief.get("host", "")
+        # Normalise host aliases (e.g. "pm-london" -> "london")
+        _alias_map = {"pm-london": "london", "neuro": "hel", "vps": "hel"}
+        host = _alias_map.get(host, host)
+        if host in host_groups:
+            host_groups[host].append((path, brief, also_by))
+        else:
+            # Unknown host: put in "mac" as fallback with a note (don't silently drop)
+            host_groups["mac"].append((path, brief, also_by))
+
+    # Sort within each host: priority asc, then mtime desc
+    for host in _HOST_ORDER:
+        def _sort_key(item):
+            path, brief, _ = item
+            pri = _brief_priority(brief)
+            try:
+                mtime = -os.path.getmtime(path)
+            except OSError:
+                mtime = 0.0
+            return (pri, mtime)
+        host_groups[host].sort(key=_sort_key)
+
+    # Priority tallies across all hosts
+    priority_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+    total_briefs = 0
+    total_actions = 0
+    for host in _HOST_ORDER:
+        for path, brief, _ in host_groups[host]:
+            total_briefs += 1
+            total_actions += len(brief.get("actions", []))
+            priority_counts[_brief_priority(brief)] += 1
+
+    lines = [
+        "<inbox-briefs>",
+        "[System note: Big SystemD inbox briefs — pending items for Bernard's approval. "
+        "Each brief has reply codes; Bernard types e.g. '1' to approve, '2' to defer, '3' to skip.]",
+        f"[{inject_label}]",
+        "",
+    ]
+
+    global_idx = 1
+    for host in _HOST_ORDER:
+        entries = host_groups[host]
+        host_action_count = sum(len(b.get("actions", [])) for _, b, _ in entries)
+        lines.append(
+            f"## {host.upper()} (host={host}) — {len(entries)} brief{'s' if len(entries) != 1 else ''}, "
+            f"{host_action_count} proposed action{'s' if host_action_count != 1 else ''}"
+        )
+        if not entries:
+            lines.append("  (no issues)")
+        else:
+            for path, brief, also_by in entries:
+                lines.append("")
+                lines.append(_format_brief(brief, global_idx, also_reported_by=also_by))
+                global_idx += 1
+        lines.append("")
+
+    lines.append(
+        f"## SUMMARY — Total {total_briefs} brief{'s' if total_briefs != 1 else ''} across {len(_HOST_ORDER)} hosts, "
+        f"priorities: P0={priority_counts[0]} P1={priority_counts[1]} P2={priority_counts[2]} P3={priority_counts[3]}"
+    )
+    lines.append("</inbox-briefs>")
     return "\n".join(lines)
 
 
@@ -609,21 +771,7 @@ def main():
                 return
             inject_label = f"delta ({len(selected)} new/updated since last inject)"
 
-        lines = [
-            "<inbox-briefs>",
-            "[System note: Big SystemD inbox briefs — pending items for Bernard's approval. "
-            "Each brief has reply codes; Bernard types e.g. '1' to approve, '2' to defer, '3' to skip.]",
-            "",
-            f"Pending briefs ({inject_label}):",
-        ]
-        for i, (path, brief) in enumerate(selected, 1):
-            lines.append("")
-            lines.append(_format_brief(brief, i))
-
-        lines.append("")
-        lines.append("</inbox-briefs>")
-
-        context = "\n".join(lines)
+        context = _format_host_grouped(selected, inject_label)
         out = json.dumps({"additionalContext": context})
 
         # Update session state: record inject timestamp + seen IDs

@@ -252,13 +252,47 @@ def should_fire(hook_path: str, prompt: str) -> bool:
 # ---------------------------------------------------------------------------
 
 LOG_PATH = Path(__file__).parent / ".router_log.jsonl"
+_LOG_COUNTER_PATH = Path(__file__).parent / ".router_log_counter"
+_LOG_TRIM_CHECK_EVERY = 100   # check line count every N writes
+_LOG_TRIM_THRESHOLD   = 10000 # trim when file exceeds this many lines
+_LOG_TRIM_KEEP        = 5000  # keep last N lines after trim
 _LOG_FD: Optional[int] = None
+_log_write_count: int = 0
+
+
+def _maybe_trim_router_log() -> None:
+    """
+    Trim .router_log.jsonl to last _LOG_TRIM_KEEP lines when it exceeds
+    _LOG_TRIM_THRESHOLD lines. Called every _LOG_TRIM_CHECK_EVERY writes.
+    Silent on any error.
+    """
+    global _LOG_FD
+    try:
+        if not LOG_PATH.exists():
+            return
+        lines = LOG_PATH.read_bytes().split(b"\n")
+        # Remove trailing empty element from final newline
+        if lines and lines[-1] == b"":
+            lines = lines[:-1]
+        if len(lines) <= _LOG_TRIM_THRESHOLD:
+            return
+        kept = lines[-_LOG_TRIM_KEEP:]
+        # Close fd before truncating
+        if _LOG_FD is not None:
+            try:
+                os.close(_LOG_FD)
+            except OSError:
+                pass
+            _LOG_FD = None
+        LOG_PATH.write_bytes(b"\n".join(kept) + b"\n")
+    except Exception:
+        pass  # always silent
 
 
 def _log_decision(hook_name: str, prompt: str, intents: set,
                   decision: str, reason: str) -> None:
     """Append one log row to .router_log.jsonl. Silent on failure."""
-    global _LOG_FD
+    global _LOG_FD, _log_write_count
     try:
         row = {
             "ts": time.time(),
@@ -272,6 +306,9 @@ def _log_decision(hook_name: str, prompt: str, intents: set,
         if _LOG_FD is None:
             _LOG_FD = os.open(str(LOG_PATH), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
         os.write(_LOG_FD, line.encode("utf-8"))
+        _log_write_count += 1
+        if _log_write_count % _LOG_TRIM_CHECK_EVERY == 0:
+            _maybe_trim_router_log()
     except Exception:
         pass  # always silent
 

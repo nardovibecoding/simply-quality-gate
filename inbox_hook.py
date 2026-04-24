@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: inbox_hook
+# fires_on: UserPromptSubmit
+# relevant_intents: [bigd, meta]
+# irrelevant_intents: [git, pm, telegram, docx, x_tweet, code, vps, sync]
+# cost_score: 3
+# always_fire: false
 """UserPromptSubmit hook: inject inbox briefs into additionalContext.
 
 Order of operations (P10.15):
@@ -35,8 +42,10 @@ import sys
 import time
 from datetime import datetime, timezone, timedelta
 
+import io
 sys.path.insert(0, os.path.dirname(__file__))
 from telemetry import log_fire, log_fire_done
+from _semantic_router import should_fire
 
 INBOX_ROOT = os.path.expanduser("~/inbox")
 BUNDLE_READY_DIR = os.path.expanduser("~/inbox/_summaries/ready")
@@ -787,4 +796,16 @@ def main():
 
 
 if __name__ == "__main__":
+    # Router check: read stdin once, check intent, re-feed for main()
+    _raw_stdin = sys.stdin.read()
+    try:
+        _hook_input = json.loads(_raw_stdin)
+        _prompt = _hook_input.get("prompt", "")
+    except Exception:
+        _hook_input = {}
+        _prompt = ""
+    sys.stdin = io.StringIO(_raw_stdin)  # re-feed for json.load() in main()
+    if not should_fire(__file__, _prompt):
+        print(json.dumps({}))
+        sys.exit(0)
     main()

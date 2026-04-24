@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: inbox_ack
+# fires_on: UserPromptSubmit
+# relevant_intents: [bigd, meta]
+# irrelevant_intents: [git, pm, telegram, docx, x_tweet, code, vps, sync]
+# cost_score: 2
+# always_fire: false
 """UserPromptSubmit hook: parse Bernard's reply codes and write approval files.
 
 Runs AFTER inbox_hook.py (registered second in settings.json) so brief context
@@ -26,6 +33,7 @@ Race protection: fcntl.flock on ~/inbox/_approvals/.ack_write.lock
 
 import fcntl
 import glob
+import io
 import json
 import os
 import re
@@ -35,6 +43,7 @@ from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(__file__))
 from telemetry import log_fire, log_fire_done
+from _semantic_router import should_fire
 
 INBOX_ROOT = os.path.expanduser("~/inbox")
 APPROVALS_DIR = os.path.join(INBOX_ROOT, "_approvals")
@@ -388,4 +397,15 @@ def main():
 
 
 if __name__ == "__main__":
+    _raw_stdin = sys.stdin.read()
+    try:
+        _hook_input = json.loads(_raw_stdin)
+        _prompt = _hook_input.get("prompt", "")
+    except Exception:
+        _hook_input = {}
+        _prompt = ""
+    sys.stdin = io.StringIO(_raw_stdin)
+    if not should_fire(__file__, _prompt):
+        print(json.dumps({}))
+        sys.exit(0)
     main()

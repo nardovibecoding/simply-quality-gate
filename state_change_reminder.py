@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: state_change_reminder
+# fires_on: UserPromptSubmit
+# relevant_intents: []
+# irrelevant_intents: []
+# cost_score: 1
+# always_fire: true
 """UserPromptSubmit hook: if state-change marker exists, inject reminder.
 
 Forces Claude to update LATEST STATE block of affected memory/wiki files

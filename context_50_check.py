@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: context_50_check
+# fires_on: UserPromptSubmit
+# relevant_intents: []
+# irrelevant_intents: []
+# cost_score: 1
+# always_fire: true
 """UserPromptSubmit hook: force /s when context hits 50%.
 
 Fires at the start of every user turn. Checks statusline JSON for context %.

@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: pending_actions
+# fires_on: UserPromptSubmit
+# relevant_intents: []
+# irrelevant_intents: []
+# cost_score: 1
+# always_fire: true
 """UserPromptSubmit hook: remind about pending plans/actions/questions from Claude.
 
 Claude writes to /tmp/claude_pending_actions.json to register items.

@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: vps_health_status
+# fires_on: UserPromptSubmit
+# relevant_intents: [vps, pm, sync, debug]
+# irrelevant_intents: [docx, x_tweet, telegram, git]
+# cost_score: 2
+# always_fire: false
 """UserPromptSubmit hook: show VPS pipeline health in additionalContext.
 
 Reads /tmp/vps_health.json (pulled from VPS by cron every 5min).
 Only injects when there are RED or YELLOW items.
 """
+import io
 import json
+import os
 import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(__file__))
+from _semantic_router import should_fire
 
 HEALTH_FILE = Path("/tmp/vps_health.json")
 MAX_AGE_SEC = 600  # ignore if older than 10min
@@ -57,4 +69,13 @@ def main():
 
 
 if __name__ == "__main__":
+    _raw_stdin = sys.stdin.read()
+    try:
+        _prompt = json.loads(_raw_stdin).get("prompt", "")
+    except Exception:
+        _prompt = ""
+    sys.stdin = io.StringIO(_raw_stdin)
+    if not should_fire(__file__, _prompt):
+        print("{}")
+        sys.exit(0)
     main()

@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: london_streaming_guard
+# fires_on: UserPromptSubmit
+# relevant_intents: [pm, vps, sync, code]
+# irrelevant_intents: [docx, x_tweet, telegram, git, bigd, memory]
+# cost_score: 1
+# always_fire: false
 """London streaming guard — UserPromptSubmit hook.
 
 Hard rule: London (vultr, 78.141.205.30) is a CONSUMER box only.
@@ -11,9 +18,14 @@ to London.
 
 Also fires on prompts that look like they could ADD streaming to London.
 """
+import io
 import json
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from _semantic_router import should_fire
 
 LONDON_TOKENS = re.compile(
     r"\b(london|vultr|78\.141\.205\.30|pm-london)\b",
@@ -65,4 +77,13 @@ def main():
 
 
 if __name__ == "__main__":
+    _raw_stdin = sys.stdin.read()
+    try:
+        _prompt = json.loads(_raw_stdin).get("prompt", "")
+    except Exception:
+        _prompt = ""
+    sys.stdin = io.StringIO(_raw_stdin)
+    if not should_fire(__file__, _prompt):
+        print("{}")
+        sys.exit(0)
     main()

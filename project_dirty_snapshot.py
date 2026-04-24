@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: project_dirty_snapshot
+# fires_on: Stop
+# relevant_intents: []
+# irrelevant_intents: []
+# cost_score: 2
+# always_fire: true
 """
 Stop hook — snapshot uncommitted work in known project repos at session end.
 
@@ -24,6 +31,16 @@ def run(args, cwd):
 def snapshot(repo: Path) -> str | None:
     if not (repo / ".git").is_dir():
         return None
+    # /ship LOCK gate: skip snapshot if a /ship slice is in progress. The slice
+    # agent commits its own files explicitly; a WIP snapshot would mix unrelated
+    # in-progress edits into the slice commit.
+    # Added 2026-04-24 after S0 new files landed in a WIP snapshot instead of
+    # the S0 refactor commit.
+    ship_dir = repo / ".ship"
+    if ship_dir.is_dir():
+        for lock in ship_dir.glob("*/LOCK"):
+            if lock.is_file():
+                return f"{repo.name}: skip (/ship slice active: {lock.parent.name})"
     status = run(["git", "status", "--porcelain"], cwd=repo)
     if status.returncode != 0 or not status.stdout.strip():
         return None

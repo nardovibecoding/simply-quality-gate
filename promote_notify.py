@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: promote_notify
+# fires_on: UserPromptSubmit
+# relevant_intents: [meta, bigd, memory]
+# irrelevant_intents: [git, pm, docx, x_tweet, code, vps, sync, telegram]
+# cost_score: 1
+# always_fire: false
 """UserPromptSubmit hook: show GREEN notification when promote_check found promotion candidates.
 
 Reads ~/.claude/promote_pending.json. Injects additionalContext with green-coded notification.
 User confirms by saying 'approve promotions' or 'skip promotions'.
 """
+import io
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(__file__))
+from _semantic_router import should_fire
 
 PENDING_FILE = Path.home() / ".claude/promote_pending.json"
 PROMOTE_SCRIPT = Path.home() / "llm-wiki-stack/promote/promote_lessons.py"
@@ -96,4 +108,13 @@ def main():
 
 
 if __name__ == "__main__":
+    _raw_stdin = sys.stdin.read()
+    try:
+        _prompt = json.loads(_raw_stdin).get("prompt", "")
+    except Exception:
+        _prompt = ""
+    sys.stdin = io.StringIO(_raw_stdin)
+    if not should_fire(__file__, _prompt):
+        sys.stdout.write("{}\n")
+        sys.exit(0)
     main()

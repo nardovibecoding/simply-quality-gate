@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: memory_recall_hook
+# fires_on: UserPromptSubmit
+# relevant_intents: []
+# irrelevant_intents: []
+# cost_score: 1
+# always_fire: true
 """UserPromptSubmit hook: remind Claude to check memory for recall-type questions."""
+import io
 import json
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from _semantic_router import should_fire
 
 RECALL_PATTERNS = re.compile(
     r"("
@@ -44,4 +56,13 @@ def main():
 
 
 if __name__ == "__main__":
+    _raw_stdin = sys.stdin.read()
+    try:
+        _prompt = json.loads(_raw_stdin).get("prompt", "")
+    except Exception:
+        _prompt = ""
+    sys.stdin = io.StringIO(_raw_stdin)
+    if not should_fire(__file__, _prompt):
+        print("{}")
+        sys.exit(0)
     main()

@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: credential_detect
+# fires_on: UserPromptSubmit
+# relevant_intents: []
+# irrelevant_intents: []
+# cost_score: 2
+# always_fire: true
 """UserPromptSubmit hook: detect credentials in user messages, inject reminder to file to SSoT.
 
 Detection tiers:

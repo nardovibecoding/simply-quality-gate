@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: pending_questions
+# fires_on: UserPromptSubmit
+# relevant_intents: []
+# irrelevant_intents: []
+# cost_score: 1
+# always_fire: true
 """UserPromptSubmit hook: remind about pending unanswered questions from Claude."""
 import json
 import re

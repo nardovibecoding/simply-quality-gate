@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
+# @bigd-hook-meta
+# name: memo_display
+# fires_on: UserPromptSubmit
+# relevant_intents: [telegram, bigd, meta]
+# irrelevant_intents: [git, pm, docx, x_tweet, code, vps, sync, debug]
+# cost_score: 2
+# always_fire: false
 """UserPromptSubmit hook: display pending memos in terminal.
 
 General memos: show once, auto-delete.
 Story memos: show on first message, then every 10 turns, persist until user deletes.
 """
+import io
 import json
 import os
 import glob
 import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from _semantic_router import should_fire
 
 BOT_REPO = os.path.expanduser("~/telegram-claude-bot")
 MEMO_DIR = os.path.expanduser("~/telegram-claude-bot/memo/pending")
@@ -178,4 +190,13 @@ def main():
 
 
 if __name__ == "__main__":
+    _raw_stdin = sys.stdin.read()
+    try:
+        _prompt = json.loads(_raw_stdin).get("prompt", "")
+    except Exception:
+        _prompt = ""
+    sys.stdin = io.StringIO(_raw_stdin)
+    if not should_fire(__file__, _prompt):
+        print(json.dumps({}))
+        sys.exit(0)
     main()

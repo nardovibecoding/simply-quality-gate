@@ -33,9 +33,9 @@ if ! ssh -o ConnectTimeout=5 "$VPS" true 2>/dev/null; then
   exit 0
 fi
 
-# ─── 1. prediction-markets (git bundle) ──────────────────────────────
+# ─── 1. prediction-markets (git bundle) ── [DISABLED 2026-04-24: replaced by deploy-pm-hel.sh/deploy-pm-lon.sh]
 PM_DIR="$HOME/prediction-markets"
-if [ -d "$PM_DIR/.git" ]; then
+if false && [ -d "$PM_DIR/.git" ]; then
   LOCAL_HEAD=$(cd "$PM_DIR" && git rev-parse HEAD)
   REMOTE_HEAD=$(ssh "$VPS" 'cd ~/prediction-markets && git rev-parse HEAD 2>/dev/null' || echo "none")
 
@@ -74,27 +74,47 @@ if [ -d "$PM_DIR/.git" ]; then
   fi
 fi
 
+# Zombie-rebase guard: bail out if a rebase is mid-flight from a prior run.
+# Past bug: pull --rebase silently paused on conflicts (stderr to /dev/null), then
+# subsequent commits stacked on top of paused HEAD. Detect + alert + abort.
+sync_git_repo() {
+  local repo_dir="$1" label="$2"
+  cd "$repo_dir" || return 1
+  if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+    log "$label: ZOMBIE REBASE detected (stopped at $(cat .git/rebase-merge/stopped-sha 2>/dev/null || echo unknown)). Auto-aborting and skipping this cycle."
+    git rebase --abort 2>/dev/null
+    return 1
+  fi
+  # Stash any unstaged changes so pull --rebase doesn't fail on dirty tree
+  local stashed=0
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    git stash push -u -m "vps_sync auto-stash $(date +%FT%T)" >/dev/null 2>&1 && stashed=1
+  fi
+  # Pull with explicit conflict detection (stderr captured, not silenced)
+  local pull_err
+  pull_err=$(git pull --rebase origin main 2>&1)
+  if [ $? -ne 0 ] || echo "$pull_err" | grep -qi 'conflict\|could not apply'; then
+    log "$label: pull --rebase failed/conflicted, aborting + skipping. Error: $(echo "$pull_err" | tail -1)"
+    git rebase --abort 2>/dev/null
+    [ "$stashed" = "1" ] && git stash pop >/dev/null 2>&1
+    return 1
+  fi
+  [ "$stashed" = "1" ] && git stash pop >/dev/null 2>&1
+  git add -A
+  git commit -m "mac-periodic: $(date +%FT%T)" --allow-empty-message 2>/dev/null
+  git push origin main 2>/dev/null
+}
+
 # ─── 2. Memory (git push/pull to self-hosted bare repo, migrated 2026-04-23) ───
 MEMORY_DIR="$HOME/.claude/projects/-Users-bernard/memory"
 if [ -d "$MEMORY_DIR/.git" ]; then
-  # pull remote changes (VPS writes), then commit+push local
-  (cd "$MEMORY_DIR" && \
-    git pull --rebase origin main 2>/dev/null ; \
-    git add -A && git commit -m "mac-periodic: $(date +%FT%T)" --allow-empty-message 2>/dev/null ; \
-    git push origin main 2>/dev/null \
-      || (git pull --rebase origin main 2>/dev/null && git push origin main 2>/dev/null)
-  ) && log "Memory: git synced" || log "Memory: git sync failed (see /tmp/memory_auto_commit.log)"
+  sync_git_repo "$MEMORY_DIR" "Memory" && log "Memory: git synced" || log "Memory: git sync failed"
 fi
 
 # ─── 3. NardoWorld wiki (git push/pull to self-hosted bare repo, migrated 2026-04-23) ───
 WIKI_DIR="$HOME/NardoWorld"
 if [ -d "$WIKI_DIR/.git" ]; then
-  (cd "$WIKI_DIR" && \
-    git pull --rebase origin main 2>/dev/null ; \
-    git add -A && git commit -m "mac-periodic: $(date +%FT%T)" --allow-empty-message 2>/dev/null ; \
-    git push origin main 2>/dev/null \
-      || (git pull --rebase origin main 2>/dev/null && git push origin main 2>/dev/null)
-  ) && log "Wiki: git synced" || log "Wiki: git sync failed"
+  sync_git_repo "$WIKI_DIR" "Wiki" && log "Wiki: git synced" || log "Wiki: git sync failed"
 fi
 
 # ─── 4. Claude scripts (rsync) ───────────────────────────────────────

@@ -37,6 +37,10 @@ REPOS = {
     "claude-quality-gate": HOME / ".claude" / "hooks",
 }
 
+# Any other git repo can opt into L1 by placing this marker file at its root.
+# Marker contents are ignored for now; presence alone is the signal.
+OPT_IN_MARKER = ".claude-l1-sync"
+
 LOG = Path("/tmp/l1_auto_commit_push.log")
 
 

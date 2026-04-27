@@ -7,3 +7,6 @@ __pycache__/
 /tmp/
 .DS_Store
 .router_log.jsonl
+sy_scorer_db.json
+*.bak
+*.bak.*

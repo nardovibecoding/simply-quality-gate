@@ -6,3 +6,4 @@ __pycache__/
 *.db
 /tmp/
 .DS_Store
+.router_log.jsonl

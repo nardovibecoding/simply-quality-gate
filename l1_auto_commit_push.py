@@ -54,16 +54,29 @@ def log(msg: str) -> None:
 
 
 def find_repo(file_path: Path):
+    """Locate the repo for a file. Eligibility:
+    1. Path lives under one of the hardcoded REPOS (always-on set), OR
+    2. Path lives under a git repo with the OPT_IN_MARKER at its root.
+    Returns (label, repo_root) or (None, None).
+    """
     try:
         resolved = file_path.resolve()
     except Exception:
         return None, None
+
     for label, root in REPOS.items():
         try:
             resolved.relative_to(root.resolve())
             return label, root
         except ValueError:
             continue
+
+    # Walk up looking for .git AND the opt-in marker.
+    for parent in [resolved] + list(resolved.parents):
+        if (parent / ".git").exists() and (parent / OPT_IN_MARKER).exists():
+            return parent.name, parent
+        if (parent / ".git").exists():
+            return None, None  # repo found but not opted-in
     return None, None
 
 

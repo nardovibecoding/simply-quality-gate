@@ -1,7 +1,7 @@
-# claude-quality-gate
+# simply-quality-gate
 
 ```bash
-claude plugins install nardovibecoding/claude-quality-gate
+claude plugins install nardovibecoding/simply-quality-gate
 ```
 
 ---
@@ -42,14 +42,14 @@ No VPS required. No MCP server. Just hooks.
 ## Install
 
 ```bash
-claude plugins install nardovibecoding/claude-quality-gate
+claude plugins install nardovibecoding/simply-quality-gate
 ```
 
 Or manually — clone and add to `~/.claude/settings.json`:
 
 ```json
 {
-  "plugins": ["~/claude-quality-gate"]
+  "plugins": ["~/simply-quality-gate"]
 }
 ```
 

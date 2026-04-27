@@ -1,5 +1,5 @@
 {
-  "description": "claude-quality-gate — automated code quality enforcement hooks",
+  "description": "simply-quality-gate — automated code quality enforcement hooks",
   "_dispatcher_note": "Optional: replace individual hook entries below with dispatcher_pre.py / dispatcher_post.py for ~75% latency reduction. See README for details.",
   "hooks": {
     "PreToolUse": [

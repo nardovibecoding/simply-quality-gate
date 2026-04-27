@@ -51,19 +51,30 @@ sync_git_repo() {
   if ! git diff --quiet || ! git diff --cached --quiet; then
     git stash push -u -m "vps_sync auto-stash $(date +%FT%T)" >/dev/null 2>&1 && stashed=1
   fi
-  # Pull with explicit conflict detection (stderr captured, not silenced)
-  local pull_err
-  pull_err=$(git pull --rebase origin main 2>&1)
-  if [ $? -ne 0 ] || echo "$pull_err" | grep -qi 'conflict\|could not apply'; then
-    log "$label: pull --rebase failed/conflicted, aborting + skipping. Error: $(echo "$pull_err" | tail -1)"
-    git rebase --abort 2>/dev/null
-    [ "$stashed" = "1" ] && git stash pop >/dev/null 2>&1
-    return 1
+  # Pull only when origin is configured. Local-only repos skip the pull-rebase
+  # entirely (no upstream to reconcile with).
+  local has_origin=0
+  git remote get-url origin >/dev/null 2>&1 && has_origin=1
+  if [ "$has_origin" = "1" ]; then
+    local pull_err
+    pull_err=$(git pull --rebase origin main 2>&1)
+    if [ $? -ne 0 ] || echo "$pull_err" | grep -qi 'conflict\|could not apply'; then
+      log "$label: pull --rebase failed/conflicted, aborting + skipping. Error: $(echo "$pull_err" | tail -1)"
+      git rebase --abort 2>/dev/null
+      [ "$stashed" = "1" ] && git stash pop >/dev/null 2>&1
+      return 1
+    fi
   fi
   [ "$stashed" = "1" ] && git stash pop >/dev/null 2>&1
   git add -A
+  # On unborn-branch repos (zero commits), git commit refuses with "no changes
+  # added to commit" only when index is also empty. With files staged, it works.
   git commit -m "mac-periodic: $(date +%FT%T)" --allow-empty-message 2>/dev/null
-  git push origin main 2>/dev/null
+  # Only push when origin is configured. Local-only repos (e.g. ~/vibe-island
+  # 2.0, ~/.claude) must still get periodic commits but have no upstream.
+  if git remote get-url origin >/dev/null 2>&1; then
+    git push origin main 2>/dev/null
+  fi
 }
 
 # ─── 2. Memory (git push/pull to self-hosted bare repo, migrated 2026-04-23) ───
@@ -77,6 +88,13 @@ WIKI_DIR="$HOME/NardoWorld"
 if [ -d "$WIKI_DIR/.git" ]; then
   sync_git_repo "$WIKI_DIR" "Wiki" && log "Wiki: git synced" || log "Wiki: git sync failed"
 fi
+
+# ─── 3.5 Local-only Mac repos ───────────────────────────────────────
+# Each leaf-level local repo gets its own gitwatch launchd daemon (real-time,
+# fswatch-driven, leaf-only by design). Add a daemon per repo at:
+#   ~/Library/LaunchAgents/com.bernard.gitwatch-<reponame>.plist
+# This script does not touch them — gitwatch handles its own lifecycle.
+# Currently watching: vibe-island (com.bernard.gitwatch-vibe-island)
 
 # ─── 4. Claude scripts (rsync) ───────────────────────────────────────
 SCRIPTS_DIR="$HOME/.claude/scripts/"

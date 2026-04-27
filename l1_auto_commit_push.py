@@ -136,21 +136,18 @@ def main() -> int:
 
     # L3 breaker: skip push if repo is currently tripped.
     breaker = "/Users/bernard/.claude/scripts/sync_breaker.py"
+    gate = "/Users/bernard/.claude/scripts/gated_push.py"
     repo_str = str(repo_root)
     tripped = run(["python3", breaker, "check", repo_str], repo_root)
     if tripped.returncode != 0:
         log(f"[{label}] SKIP push — breaker TRIPPED (run sync_breaker.py reset to clear)")
         return 0
 
-    # Async push: fire-and-forget; record success/failure for the breaker.
+    # Async gated push: scans diff for credential leaks before pushing to
+    # github.com remotes; non-github remotes (Hel/London bare) bypass scan.
+    # Breaker success/failure recorded inside gated_push.
     push_log = f"/tmp/l1_push_{label}.log"
-    cmd = (
-        f"if git push origin main >> {push_log} 2>&1; then "
-        f"  python3 {breaker} success {repo_str!r} >/dev/null; "
-        f"else "
-        f"  python3 {breaker} failure {repo_str!r} >> {push_log} 2>&1; "
-        f"fi"
-    )
+    cmd = f"python3 {gate} {repo_str!r} main >> {push_log} 2>&1"
     try:
         subprocess.Popen(
             cmd,

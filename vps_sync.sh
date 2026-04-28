@@ -72,8 +72,10 @@ sync_git_repo() {
   git commit -m "mac-periodic: $(date +%FT%T)" --allow-empty-message 2>/dev/null
   # Only push when origin is configured. Local-only repos (e.g. ~/vibe-island
   # 2.0, ~/.claude) must still get periodic commits but have no upstream.
+  # Route via gated_push.py so the L3 breaker records success/failure and the
+  # privacy gate scans github.com pushes (no-op for ssh-bare remotes).
   if git remote get-url origin >/dev/null 2>&1; then
-    git push origin main 2>/dev/null
+    python3 "$HOME/.claude/scripts/gated_push.py" "$repo_dir" main 2>/dev/null
   fi
 }
 

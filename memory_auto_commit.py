@@ -45,16 +45,19 @@ def main():
         print("{}")
         return
 
-    # Fire-and-forget: pull --rebase first (pick up VPS writes), then commit + push to both remotes
+    # Fire-and-forget: pull --rebase first (pick up VPS writes), then commit + push to both remotes.
+    # Push goes through gated_push.py so the L3 breaker tracks outcomes and the privacy gate
+    # scans github.com pushes (no-op for memory's hel:/london: ssh-bare remotes).
     LOG = Path("/tmp/memory_auto_commit.log")
     ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    GATE = Path.home() / ".claude" / "scripts" / "gated_push.py"
     script = (
         f"cd {MEMORY_SRC} && "
         f"git pull --rebase origin main 2>&1 ; "
         f"git add -A && "
         f"git commit -m 'session-end: {ts}' --allow-empty-message 2>&1 ; "
-        f"git push origin main 2>&1 || "
-        f"( git pull --rebase origin main 2>&1 && git push origin main 2>&1 )"
+        f"python3 {GATE} {MEMORY_SRC} main 2>&1 || "
+        f"( git pull --rebase origin main 2>&1 && python3 {GATE} {MEMORY_SRC} main 2>&1 )"
     )
     with open(LOG, "a") as f:
         f.write(f"\n--- {ts} ---\n")

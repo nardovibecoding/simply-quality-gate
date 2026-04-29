@@ -53,10 +53,9 @@ CUBE_CONTEXT: Final[dict[str, list[str]]] = {
         r"\bcodex[- ]?cutover\b", r"\bgithooks\b",
     ],
     "claude-harness": [
-        r"\bskill[- ]?loader\b", r"\bbigd\b", r"\bdaemons?\b",
-        r"\b/ship\b", r"\b/debug\b", r"\b/recall\b", r"\b/snap\b",
-        r"\bUserPromptSubmit\b", r"\bPreToolUse\b", r"\bPostToolUse\b",
-        r"\bevidence[- ]?guard\b", r"\bship\.md\b",
+        r"\bskill[- ]?loader\b", r"\bUserPromptSubmit\b", r"\bPreToolUse\b",
+        r"\bPostToolUse\b", r"\bevidence[- ]?guard\b",
+        r"\blaunchagent[- ]?dup\b", r"\bcontext[- ]?50[- ]?check\b",
     ],
 }
 

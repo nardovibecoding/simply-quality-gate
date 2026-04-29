@@ -20,11 +20,17 @@ from typing import Final
 # CONTEXT = supporting tokens (weight 1). Anchor matches dominate ties.
 # Word-boundaries on every regex to avoid substring FPs ("hel" matching "hello").
 CUBE_ANCHORS: Final[dict[str, list[str]]] = {
-    "pm-bot":         [r"\bkalshi\b", r"\bpolymarket\b", r"\bmanifold\b", r"\bpm[- ]?bot\b", r"\bprediction[- ]?market"],
+    "pm-bot":         [r"\bkalshi\b", r"\bpolymarket\b", r"\bmanifold\b", r"\bpm[- ]?bot\b",
+                       r"\bprediction[- ]?market", r"\bpm[- ]session\b", r"\bpm[- ]pipeline\b",
+                       r"\bpm[- ]eval\b", r"\bpm[- ]strategy", r"\bpm[- ]strategies\b",
+                       r"\bpm[- ]dashboard\b", r"\bpm[- ]orderbook\b", r"\bpm[- ]epoch\b",
+                       r"\bpm[- ]launchd\b", r"\bpm[- ]exchange\b", r"\bpm[- ]whale\b"],
     "vibe-island":    [r"\bvibe[- ]?island\b", r"\bvibeisland\b"],
     "dagou":          [r"\bdagou\b"],
     "codex":          [r"\bcodex\b"],
-    "claude-harness": [r"\bclaude[- ]?code\b", r"\bclaude\.md\b", r"\bsemantic[- ]?router\b", r"\bsettings\.json\b"],
+    "claude-harness": [r"\bclaude[- ]?code\b", r"\bclaude\.md\b", r"\bsemantic[- ]?router\b",
+                       r"\bsettings\.json\b", r"\bship\.md\b", r"\bbigd\b",
+                       r"\b/ship\b", r"\b/debug\b", r"\b/recall\b", r"\b/snap\b", r"\b/daemons\b"],
 }
 
 CUBE_CONTEXT: Final[dict[str, list[str]]] = {

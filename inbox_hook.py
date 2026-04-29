@@ -815,7 +815,10 @@ def _format_bundle_digest(bundle: dict) -> str:
                 fid = act.get("finding_id") or act.get("id") or "?"
                 fid_short = fid[:12] if len(fid) > 12 else fid
                 carry_status = act.get("carry_status", "")
+                from_skipped = act.get("from_skipped_day", False)
                 status_tag = " [REC]" if carry_status == "RECURRING" else ""
+                if from_skipped:
+                    status_tag += " [SKIP]"
                 lines.append(
                     f"    {sev_label} {daemon_host:<18s}  {title[:60]:<60s}  …{fid_short}{status_tag}"
                 )

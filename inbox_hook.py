@@ -838,6 +838,53 @@ def _format_bundle_digest(bundle: dict) -> str:
                     )
                     num += 1
 
+    # OPEN SCRIBBLES section — aging memos from /memo store (memo-v2 S6)
+    # Invokes ~/.claude/skills/memo/scripts/list_aging.py via subprocess.
+    # Subprocess (not direct import) keeps hook lean + lets us swap memo
+    # backend later. Degrades silently on any failure (missing script,
+    # missing _index.jsonl, timeout) — never crash the digest render.
+    try:
+        import os as _os
+        import subprocess as _sp
+        _aging_script = _os.path.expanduser(
+            "~/.claude/skills/memo/scripts/list_aging.py"
+        )
+        if _os.path.isfile(_aging_script):
+            _proc = _sp.run(
+                ["python3", _aging_script, "--with-total",
+                 "--threshold", "7", "--limit", "10"],
+                capture_output=True, text=True, timeout=2,
+            )
+            if _proc.returncode == 0 and _proc.stdout.strip():
+                _payload = json.loads(_proc.stdout)
+                _aging_rows = _payload.get("rows") or []
+                _aging_total = int(_payload.get("total") or 0)
+                if _aging_rows:
+                    lines.append("")
+                    lines.append(
+                        f"## \U0001f4cc OPEN SCRIBBLES "
+                        f"({_aging_total} unanswered, >7 days)"
+                    )
+                    for _row in _aging_rows:
+                        _tag = (_row.get("primary_tag") or "").strip()
+                        _tag_disp = f"[#{_tag}]" if _tag else "[?]"
+                        # 8-char tag column right-padded
+                        _tag_col = f"{_tag_disp:<8s}"
+                        _age = int(_row.get("ts_age_days") or 0)
+                        _preview = (_row.get("body_preview") or "").strip()
+                        lines.append(
+                            f"  {_tag_col}  {_age}d ago — {_preview}"
+                        )
+                    if _aging_total > len(_aging_rows):
+                        _more = _aging_total - len(_aging_rows)
+                        lines.append(
+                            f"  … +{_more} more — "
+                            f"run /memo --since 7d for full list"
+                        )
+    except Exception:
+        # Silent degrade — never crash digest on memo plumbing issue
+        pass
+
     lines += [
         "",
         "## Action codes to reply with:",

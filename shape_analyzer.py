@@ -25,8 +25,9 @@ from collections import Counter, defaultdict
 NARDO_META = Path.home() / "NardoWorld" / "meta"
 SHAPE_FILE = NARDO_META / "response_shape.jsonl"
 PROPOSALS_FILE = NARDO_META / "shape_proposals.md"
+CUTOFF_FILE = NARDO_META / ".shape_analyzer_cutoff.json"
 N_SHAPE = 50
-ANALYZER_VERSION = "1.0"
+ANALYZER_VERSION = "1.1"
 
 # Negative signals = indicators Bernard was dissatisfied/interrupted.
 # Positive signals (ack, satisfaction, elaboration) skipped — no rule to propose.

@@ -41,7 +41,7 @@ SY_LINE_RE = re.compile(
 # Signals for classifying user reply
 ACCEPT_RE = re.compile(
     r'^(ok|okay|got it|yes|sy|lets go|let\'?s go|alright|makes sense|understood'
-    r'|o\d+|proceed|go|fire|ship|do it|yep|yeah|sure|correct|right|confirmed'
+    r'|o\d+|\d{1,2}$|proceed|go|fire|ship|do it|yep|yeah|sure|correct|right|confirmed'
     r'|both|all|done|continue|next)',
     re.IGNORECASE
 )

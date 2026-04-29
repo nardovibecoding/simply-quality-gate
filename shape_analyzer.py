@@ -212,14 +212,21 @@ def main():
         print("shape_analyzer: response_shape.jsonl empty — run lesson_extractor --full-rescan first")
         sys.exit(1)
 
-    signal_counts, corr = analyze(shapes)
+    if "--mark-reviewed" in sys.argv:
+        max_ts = max((int(s.get("ts", 0)) for s in shapes), default=0)
+        write_cutoff(max_ts)
+        print(f"shape_analyzer: marked reviewed at ts={max_ts} ({len(shapes)} events archived)")
+        return
+
+    cutoff_ts, reviewed_at = load_cutoff()
+    total_counts, fresh_counts, corr, fresh_n, reviewed_n = analyze(shapes, cutoff_ts)
 
     if "--report" in sys.argv:
-        print(f"Total shapes: {sum(signal_counts.values())}")
-        print("\nSignal distribution:")
-        for sig, c in signal_counts.most_common():
+        print(f"Total shapes: {sum(total_counts.values())} (reviewed: {reviewed_n}, fresh: {fresh_n})")
+        print("\nFresh signal distribution:")
+        for sig, c in fresh_counts.most_common():
             print(f"  {c:5d} {sig}")
-        print("\nNegative-signal × anti-pattern correlations:")
+        print("\nNegative-signal × anti-pattern correlations (fresh):")
         for sig in NEGATIVE_SIGNALS:
             if not corr[sig]:
                 continue
@@ -229,10 +236,10 @@ def main():
                 print(f"    {flag} {c:4d}  {ap}")
         return
 
-    write_proposals(signal_counts, corr)
-    total_neg = sum(v for k, v in signal_counts.items() if k in NEGATIVE_SIGNALS)
+    write_proposals(total_counts, fresh_counts, corr, fresh_n, reviewed_n, reviewed_at)
+    total_neg = sum(v for k, v in fresh_counts.items() if k in NEGATIVE_SIGNALS)
     ready = sum(1 for sig in NEGATIVE_SIGNALS for _, c in corr[sig].items() if c >= N_SHAPE)
-    print(f"shape_analyzer: wrote {PROPOSALS_FILE} ({ready} proposals ready, {total_neg} negative signals analyzed)")
+    print(f"shape_analyzer: wrote {PROPOSALS_FILE} ({ready} proposals ready, {total_neg} fresh negative signals)")
 
 
 if __name__ == "__main__":

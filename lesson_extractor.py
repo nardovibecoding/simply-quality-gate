@@ -391,6 +391,62 @@ def append_shapes(shapes):
     _atomic_append(SHAPE_FILE, buf)
 
 
+def load_existing_pushback_keys(filepath):
+    keys = set()
+    if not filepath.exists():
+        return keys
+    with open(filepath) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                sid = obj.get("session_id", "")
+                tidx = obj.get("turn_idx", -1)
+                if sid and tidx >= 0:
+                    keys.add((sid, tidx))
+            except json.JSONDecodeError:
+                pass
+    return keys
+
+
+def build_pushback_records(pairs, existing_keys):
+    """For each clarify/reject pair, build a pushback record with extracted reasoning."""
+    out = []
+    for p in pairs:
+        if p.get("signal") not in ("clarify", "reject"):
+            continue
+        key = (p.get("session_id", ""), p.get("turn_idx", -1))
+        if key in existing_keys:
+            continue
+        reply = p.get("user_reply", "")
+        fragments, tags = extract_reasoning(reply)
+        if not fragments and not tags:
+            continue
+        out.append({
+            "schema_version": SCHEMA_VERSION,
+            "ts": p.get("ts", int(time.time())),
+            "session_id": key[0],
+            "turn_idx": key[1],
+            "signal": p["signal"],
+            "sy_text": p.get("sy_text", "")[:200],
+            "user_reply": reply[:300],
+            "reasoning_fragments": fragments,
+            "principle_tags": tags,
+            "extractor_version": EXTRACTOR_VERSION,
+        })
+        existing_keys.add(key)
+    return out
+
+
+def append_pushbacks(records):
+    if not records:
+        return
+    buf = "".join(json.dumps(r) + "\n" for r in records)
+    _atomic_append(PUSHBACK_FILE, buf)
+
+
 def load_existing_shape_keys(filepath):
     keys = set()
     if not filepath.exists():

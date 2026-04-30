@@ -109,7 +109,8 @@ def check_claim(abs_path: str, own_sid: str | None) -> dict | None:
     claim_ts = claim.get("ts", "?")
 
     # Own claim → allow.
-    if own_sid and claim_sid == own_sid:
+    # Also allow when own_sid is unknown (fail-open: can't verify, don't block).
+    if not own_sid or claim_sid == own_sid:
         return None
 
     # Dead session → sweep and allow.

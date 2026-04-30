@@ -112,6 +112,46 @@ def classify_shape(user_text):
     return None
 
 
+# Pushback reasoning extraction patterns
+# Each pattern captures the substring AFTER the trigger word as the reasoning.
+REASONING_PATTERNS = [
+    ("because",     re.compile(r'\bbecause\s+(.{5,200}?)(?:\.|$)', re.I | re.DOTALL)),
+    ("need",        re.compile(r'\b(?:we|i)\s+need\s+(.{5,200}?)(?:\.|$)', re.I | re.DOTALL)),
+    ("want",        re.compile(r'\b(?:i)\s+(?:want|prefer)\s+(.{5,200}?)(?:\.|$)', re.I | re.DOTALL)),
+    ("first",       re.compile(r'\b(.{3,80}?)\s+first\b', re.I)),
+    ("not_X_but_Y", re.compile(r'\b(?:no|not)\s+(.{3,80}?)\s+but\s+(.{5,200}?)(?:\.|$)', re.I | re.DOTALL)),
+    ("ylyy_perm",   re.compile(r'\b(ylyy|perm fix|永久|一勞永逸)\b', re.I)),
+]
+
+# Principle tags — map reasoning content to recurring themes.
+PRINCIPLE_TAGS = [
+    ("permanence",     re.compile(r'\b(ylyy|perm fix|once|永久|一勞永逸|durable|recur)\b', re.I)),
+    ("verify_first",   re.compile(r'\b(verify|check|confirm|prove|evidence|test)\b', re.I)),
+    ("scope_concern",  re.compile(r'\b(scope|too (big|small)|out of scope|narrow|broaden)\b', re.I)),
+    ("layman",         re.compile(r'\b(layman|eli5|simple|explain|what does|what is)\b', re.I)),
+    ("priority",       re.compile(r'\b(blocker|urgent|first|priority|important|matters)\b', re.I)),
+    ("timing",         re.compile(r'\b(later|now|tomorrow|today|tonight|morning|after|before)\b', re.I)),
+    ("alternative",    re.compile(r'\b(actually|instead|rather|better|other (way|option))\b', re.I)),
+    ("constraint",     re.compile(r'\b(can\'?t|cannot|must|have to|require|need)\b', re.I)),
+    ("consolidation",  re.compile(r'\b(consolidate|single source|one place|ssot|unified)\b', re.I)),
+    ("safety",         re.compile(r'\b(safe|risk|backup|preserve|don\'?t lose|protect)\b', re.I)),
+]
+
+
+def extract_reasoning(reply_text):
+    """Pull reasoning fragments + principle tags from a user reply."""
+    if not reply_text:
+        return [], []
+    fragments = []
+    for label, pat in REASONING_PATTERNS:
+        for m in pat.finditer(reply_text):
+            captured = " | ".join(g.strip() for g in m.groups() if g)
+            if captured:
+                fragments.append({"type": label, "text": captured[:200]})
+    tags = [name for name, pat in PRINCIPLE_TAGS if pat.search(reply_text)]
+    return fragments, tags
+
+
 # Hard-gate patterns — never auto-classify these (future Slice 2+ use)
 HARD_GATES = [
     re.compile(p, re.IGNORECASE) for p in [

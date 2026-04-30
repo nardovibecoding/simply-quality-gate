@@ -23,6 +23,7 @@ from pathlib import Path
 NARDO_META = Path.home() / "NardoWorld" / "meta"
 SY_PAIRS_FILE = NARDO_META / "sy_pairs.jsonl"
 SHAPE_FILE = NARDO_META / "response_shape.jsonl"
+PUSHBACK_FILE = NARDO_META / "pushback_reasons.jsonl"
 STATUS_FILE = Path("/tmp/s_extractor_last_run.json")
 STATUSLINE_FILE = Path("/tmp/claude_statusline.json")
 PROJECTS_DIR = Path.home() / ".claude" / "projects" / "-Users-bernard"

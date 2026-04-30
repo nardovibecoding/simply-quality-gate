@@ -23,7 +23,8 @@ import sys
 import hashlib
 import subprocess
 
-CLAIMS_DIR = os.path.expanduser("~/.claude/bus/claims")
+_bus_dir = os.environ.get("BUS_DIR", os.path.expanduser("~/.claude/bus"))
+CLAIMS_DIR = os.path.join(_bus_dir, "claims")
 
 # Tools whose file_path param we intercept.
 WATCHED_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}

@@ -594,8 +594,10 @@ def main():
     if "--full-rescan" in args:
         existing_keys = load_existing_keys(SY_PAIRS_FILE)
         existing_shape_keys = load_existing_shape_keys(SHAPE_FILE)
+        existing_pushback_keys = load_existing_pushback_keys(PUSHBACK_FILE)
         all_pairs = []
         all_shapes = []
+        all_pushbacks = []
         files = list(PROJECTS_DIR.glob("*.jsonl"))
         errors = []
         for fp in files:
@@ -609,13 +611,16 @@ def main():
                 errors.append(f"{fp.name}: shape:{err}")
             else:
                 all_shapes.extend(shapes)
+        all_pushbacks = build_pushback_records(all_pairs, existing_pushback_keys)
         if all_pairs:
             append_pairs(all_pairs)
         if all_shapes:
             append_shapes(all_shapes)
+        if all_pushbacks:
+            append_pushbacks(all_pushbacks)
         error_msg = "; ".join(errors) if errors else None
         write_status("full-rescan", len(all_pairs), error_msg, len(files), len(all_shapes))
-        print(f"Full rescan: {len(files)} files, {len(all_pairs)} SY pairs, {len(all_shapes)} shapes")
+        print(f"Full rescan: {len(files)} files, {len(all_pairs)} SY pairs, {len(all_shapes)} shapes, {len(all_pushbacks)} pushback reasons")
         return
 
     if "--from-statusline" in args or not args:

@@ -28,7 +28,7 @@ def main():
 
     print(json.dumps({
         "systemMessage": (
-            "📝 **Gmail draft created.** Run content-humanizer on the draft body before sending. "
+            "📝 **Gmail draft created.** Run /tweet humanize on the draft body before sending. "
             "Remove AI patterns: delve, crucial, leverage, navigate, robust. "
             "Add personality and real voice."
         )

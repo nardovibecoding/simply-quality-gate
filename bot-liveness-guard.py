@@ -1,1 +1,0 @@
-/Users/bernard/prediction-markets/hooks/bot-liveness-guard.py

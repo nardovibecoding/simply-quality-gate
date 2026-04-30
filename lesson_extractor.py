@@ -648,8 +648,13 @@ def main():
     if shapes:
         append_shapes(shapes)
 
+    existing_pushback_keys = load_existing_pushback_keys(PUSHBACK_FILE)
+    pushbacks = build_pushback_records(pairs, existing_pushback_keys)
+    if pushbacks:
+        append_pushbacks(pushbacks)
+
     write_status(session_id, len(pairs), shape_err, 1, len(shapes))
-    print(f"lesson_extractor: {len(pairs)} new SY, {len(shapes)} new shape(s) from {Path(jsonl_path).name}")
+    print(f"lesson_extractor: {len(pairs)} new SY, {len(shapes)} new shape(s), {len(pushbacks)} pushbacks from {Path(jsonl_path).name}")
 
     if pairs:
         try:

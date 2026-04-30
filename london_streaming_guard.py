@@ -1,1 +1,0 @@
-/Users/bernard/prediction-markets/hooks/london_streaming_guard.py

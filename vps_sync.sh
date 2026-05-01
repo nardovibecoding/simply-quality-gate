@@ -63,11 +63,17 @@ sync_git_repo() {
     # Reset any leftover MERGE_HEAD / CHERRY_PICK_HEAD too
     [ -f .git/MERGE_HEAD ]        && git merge --abort 2>/dev/null
     [ -f .git/CHERRY_PICK_HEAD ]  && git cherry-pick --abort 2>/dev/null
-    # Verify clean working tree state (per HEAD); if dirty, bail
-    if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
-      log "$label: P3 — abort failed, working tree still mid-rebase, MANUAL FIX NEEDED"
+    # Verify clean: rebase dirs gone AND no stray MERGE_HEAD/CHERRY_PICK_HEAD AND porcelain clean
+    local residue=""
+    [ -d .git/rebase-merge ]      && residue="$residue rebase-merge"
+    [ -d .git/rebase-apply ]      && residue="$residue rebase-apply"
+    [ -f .git/MERGE_HEAD ]        && residue="$residue MERGE_HEAD"
+    [ -f .git/CHERRY_PICK_HEAD ]  && residue="$residue CHERRY_PICK_HEAD"
+    if [ -n "$residue" ]; then
+      log "$label: P3 — abort failed, residue:$residue, MANUAL FIX NEEDED"
       return 1
     fi
+    # Tracked-file dirty state allowed (will be stashed below); only fail on op-state residue.
   fi
 
   # Stash any unstaged changes so pull doesn't fail on dirty tree

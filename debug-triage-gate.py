@@ -19,6 +19,9 @@ import time
 
 
 F_PAT = re.compile(r"(?im)^[\s>\-*]*F[-_ ]?famil(?:y|ies)\s*:\s*F\d+(?:\.\d+)?")
+# Concern axis (C1-C7) — accepted as alternative triage marker per
+# concerns-taxonomy.md (jz-mode added 2026-05-01).
+C_PAT = re.compile(r"(?im)^[\s>\-*]*Concern\s*:\s*C[1-7]\b")
 DEBUG_FILE_PAT = re.compile(
     r"(realize-debt\.md|/debug[-_/][^/]*\.md|/debug-verdict)$"
 )

@@ -130,7 +130,9 @@ sync_git_repo() {
   git commit -m "mac-periodic: $(date +%FT%T)" --allow-empty-message 2>/dev/null
 
   if git remote get-url origin >/dev/null 2>&1; then
-    python3 "$HOME/.claude/scripts/gated_push.py" "$repo_dir" main 2>/dev/null
+    if python3 "$HOME/.claude/scripts/gated_push.py" "$repo_dir" main 2>/dev/null; then
+      touch "$LAST_PUSH_FILE"
+    fi
   fi
 }
 

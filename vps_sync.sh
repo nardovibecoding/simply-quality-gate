@@ -49,6 +49,8 @@ fi
 #       the working tree in mid-rebase state across cycles.
 DIVERGENCE_PREFER_MERGE=50    # P1 threshold: >this commits ahead → merge mode
 DIVERGENCE_ALERT=200          # P2 threshold: >this + push stuck → alert + bail
+PUSH_STUCK_SECS=3600          # P2: a push older than this counts as "stuck"
+LAST_PUSH_FILE="/tmp/vps_sync.last_push"
 
 sync_git_repo() {
   local repo_dir="$1" label="$2"

@@ -35,45 +35,87 @@ fi
 
 # prediction-markets sync moved to deploy-pm-hel.sh + deploy-pm-lon.sh (2026-04-24).
 
-# Zombie-rebase guard: bail out if a rebase is mid-flight from a prior run.
-# Past bug: pull --rebase silently paused on conflicts (stderr to /dev/null), then
-# subsequent commits stacked on top of paused HEAD. Detect + alert + abort.
+# Sync helper. Three perm-fix layers added 2026-05-01 (post-detector-loss incident):
+#
+# P1 — Use merge (--no-rebase), not rebase, for any repo with >50 local commits
+#       ahead of origin. Replaying 5000+ commits onto origin's tip is the actual
+#       breakage shape; merge is one commit and never has the "replay-conflict
+#       on commit #N out of 5361" pause-state.
+# P2 — Divergence guardrail: if >DIVERGENCE_ALERT commits ahead of origin AND
+#       no successful push in last hour, log loud alert and bail out. This means
+#       the breaker / push gate is jammed; manual intervention needed.
+# P3 — Stuck-rebase auto-recovery: hard-abort + verify clean working tree
+#       before continuing. Existing zombie guard only logged + skipped, leaving
+#       the working tree in mid-rebase state across cycles.
+DIVERGENCE_PREFER_MERGE=50    # P1 threshold: >this commits ahead → merge mode
+DIVERGENCE_ALERT=200          # P2 threshold: >this + push stuck → alert + bail
+
 sync_git_repo() {
   local repo_dir="$1" label="$2"
   cd "$repo_dir" || return 1
+
+  # P3: hard-recover from any prior stuck rebase / merge / cherry-pick.
   if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
-    log "$label: ZOMBIE REBASE detected (stopped at $(cat .git/rebase-merge/stopped-sha 2>/dev/null || echo unknown)). Auto-aborting and skipping this cycle."
-    git rebase --abort 2>/dev/null
-    return 1
+    log "$label: P3 — stuck rebase detected, hard-aborting"
+    git rebase --abort 2>/dev/null || true
+    # Reset any leftover MERGE_HEAD / CHERRY_PICK_HEAD too
+    [ -f .git/MERGE_HEAD ]        && git merge --abort 2>/dev/null
+    [ -f .git/CHERRY_PICK_HEAD ]  && git cherry-pick --abort 2>/dev/null
+    # Verify clean working tree state (per HEAD); if dirty, bail
+    if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+      log "$label: P3 — abort failed, working tree still mid-rebase, MANUAL FIX NEEDED"
+      return 1
+    fi
   fi
-  # Stash any unstaged changes so pull --rebase doesn't fail on dirty tree
+
+  # Stash any unstaged changes so pull doesn't fail on dirty tree
   local stashed=0
   if ! git diff --quiet || ! git diff --cached --quiet; then
     git stash push -u -m "vps_sync auto-stash $(date +%FT%T)" >/dev/null 2>&1 && stashed=1
   fi
-  # Pull only when origin is configured. Local-only repos skip the pull-rebase
-  # entirely (no upstream to reconcile with).
+
   local has_origin=0
   git remote get-url origin >/dev/null 2>&1 && has_origin=1
   if [ "$has_origin" = "1" ]; then
-    local pull_err
-    pull_err=$(git pull --rebase origin main 2>&1)
-    if [ $? -ne 0 ] || echo "$pull_err" | grep -qi 'conflict\|could not apply'; then
-      log "$label: pull --rebase failed/conflicted, aborting + skipping. Error: $(echo "$pull_err" | tail -1)"
-      git rebase --abort 2>/dev/null
+    # Fetch first so divergence numbers are accurate
+    git fetch origin main 2>/dev/null
+
+    # P2: divergence guardrail
+    local ahead behind
+    ahead=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+    behind=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
+
+    if [ "$ahead" -gt "$DIVERGENCE_ALERT" ]; then
+      log "$label: P2 ALERT — local ahead by $ahead commits (>$DIVERGENCE_ALERT). Push gate likely jammed. Bailing without pull. Manual: check ~/.claude/scripts/sync_breaker.py status."
       [ "$stashed" = "1" ] && git stash pop >/dev/null 2>&1
       return 1
     fi
+
+    # P1: pick pull strategy by divergence
+    local pull_strategy="--rebase"
+    if [ "$ahead" -gt "$DIVERGENCE_PREFER_MERGE" ]; then
+      pull_strategy="--no-rebase"
+      log "$label: P1 — local ahead by $ahead commits (>$DIVERGENCE_PREFER_MERGE), using merge instead of rebase"
+    fi
+
+    if [ "$behind" -gt 0 ]; then
+      local pull_err
+      pull_err=$(git pull $pull_strategy origin main 2>&1)
+      if [ $? -ne 0 ] || echo "$pull_err" | grep -qi 'conflict\|could not apply'; then
+        log "$label: pull failed/conflicted (strategy=$pull_strategy), hard-recovering. Error: $(echo "$pull_err" | tail -1)"
+        # Try every recovery path (only one will apply per state)
+        git rebase --abort 2>/dev/null || true
+        git merge --abort 2>/dev/null || true
+        [ "$stashed" = "1" ] && git stash pop >/dev/null 2>&1
+        return 1
+      fi
+    fi
   fi
+
   [ "$stashed" = "1" ] && git stash pop >/dev/null 2>&1
   git add -A
-  # On unborn-branch repos (zero commits), git commit refuses with "no changes
-  # added to commit" only when index is also empty. With files staged, it works.
   git commit -m "mac-periodic: $(date +%FT%T)" --allow-empty-message 2>/dev/null
-  # Only push when origin is configured. Local-only repos (e.g. ~/vibe-island
-  # 2.0, ~/.claude) must still get periodic commits but have no upstream.
-  # Route via gated_push.py so the L3 breaker records success/failure and the
-  # privacy gate scans github.com pushes (no-op for ssh-bare remotes).
+
   if git remote get-url origin >/dev/null 2>&1; then
     python3 "$HOME/.claude/scripts/gated_push.py" "$repo_dir" main 2>/dev/null
   fi

@@ -88,9 +88,20 @@ sync_git_repo() {
     behind=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
 
     if [ "$ahead" -gt "$DIVERGENCE_ALERT" ]; then
-      log "$label: P2 ALERT — local ahead by $ahead commits (>$DIVERGENCE_ALERT). Push gate likely jammed. Bailing without pull. Manual: check ~/.claude/scripts/sync_breaker.py status."
-      [ "$stashed" = "1" ] && git stash pop >/dev/null 2>&1
-      return 1
+      # P2: only bail when push is ALSO stuck (no successful push in last hour).
+      # Comment block (lines 44-46) said AND; prior code only checked ahead.
+      local last_push_age=999999
+      if [ -f "$LAST_PUSH_FILE" ]; then
+        local now=$(date +%s) lp=$(stat -f %m "$LAST_PUSH_FILE" 2>/dev/null || stat -c %Y "$LAST_PUSH_FILE" 2>/dev/null || echo 0)
+        last_push_age=$((now - lp))
+      fi
+      if [ "$last_push_age" -gt "$PUSH_STUCK_SECS" ]; then
+        log "$label: P2 ALERT — ahead=$ahead (>$DIVERGENCE_ALERT) AND last push ${last_push_age}s ago (>$PUSH_STUCK_SECS). Push gate jammed. Bailing. Manual: check ~/.claude/scripts/sync_breaker.py status."
+        [ "$stashed" = "1" ] && git stash pop >/dev/null 2>&1
+        return 1
+      else
+        log "$label: P2 — ahead=$ahead (>$DIVERGENCE_ALERT) but last push ${last_push_age}s ago (≤$PUSH_STUCK_SECS), proceeding"
+      fi
     fi
 
     # P1: pick pull strategy by divergence

@@ -76,7 +76,7 @@ def main() -> None:
     missing = []
     if not has_section(content):
         missing.append("§Discipline Impact section header")
-    for f in ("lens", "applicable_DIs", "disciplines", "gaps"):
+    for f in ("lens", "applicable_DIs", "applicable_concerns", "disciplines", "gaps"):
         if not has_field(content, f):
             missing.append(f"sub-field `{f}:` (with non-empty value)")
 

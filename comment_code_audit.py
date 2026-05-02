@@ -36,13 +36,18 @@ LOG = pathlib.Path.home() / ".claude" / "scripts" / "state" / "comment-code-audi
 SKIP_LOG = pathlib.Path.home() / ".claude" / "scripts" / "state" / "comment-code-audit-skips.jsonl"
 SUPPORTED_EXT = {".sh", ".py", ".ts", ".tsx", ".js", ".jsx", ".bash", ".zsh"}
 COMMENT_PREFIX = re.compile(r"^\s*(#|//|\*)\s?")
-# AND/OR matchers — case-insensitive, word-bounded (\b ensures we don't match inside identifiers like "PANDA")
-JOIN_AND = re.compile(r"\b(?:AND|And|and)\b")
-JOIN_OR = re.compile(r"\b(?:OR|Or|or)\b")
+# AND/OR matchers — must be space-padded (rejects hyphenated compounds like "fire-and-forget").
+# Use lookarounds for whitespace so the match doesn't consume separators.
+JOIN_AND = re.compile(r"(?<=\s)(?:AND|And|and)(?=\s)")
+JOIN_OR = re.compile(r"(?<=\s)(?:OR|Or|or)(?=\s)")
 HAS_AND_OP = re.compile(r"&&|\band\b")  # bash/python boolean operators
 HAS_OR_OP = re.compile(r"\|\||\bor\b")
 WORD = re.compile(r"\b\w+\b")
+# Metadata-block suppression: detector docstrings + module headers have ≥3 lines like
+# "key: value" or "key-name: value". Skip those blocks (they're documentation, not clause-pairs).
+META_KV_LINE = re.compile(r"^\s*[A-Za-z][\w-]*:\s+\S")
 MIN_SIDE_WORDS = 3   # H11 threshold — both sides of AND/OR conjunction must have ≥3 words
+MIN_META_KV_LINES = 3  # block with ≥this many KV lines is metadata, skip
 
 
 def words_count(s: str) -> int:

@@ -189,6 +189,10 @@ def _save_writer_state(state: dict) -> None:
 
 def _runtime_actor() -> str:
     """Return the assistant runtime actor for emitted SSOT rows."""
+    hook_path = str(Path(__file__))
+    resolved_hook_path = str(Path(__file__).resolve())
+    if "/.codex/hooks/" in hook_path or "/.codex/hooks/" in resolved_hook_path:
+        return "codex"
     if (os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_CI")
             or os.environ.get("CODEX_SESSION") or os.environ.get("CODEX_CLI_VERSION")):
         return "codex"
@@ -352,6 +356,26 @@ def _hash_args(args: dict) -> str:
         return hashlib.sha256(canon.encode("utf-8")).hexdigest()[:16]
     except Exception:
         return ""
+
+
+_POLICY_VERSION_CACHE: str | None = None
+
+
+def _claude_md_policy_version() -> str:
+    """Git short-sha of ~/.claude HEAD; cached per-process. 'unknown' on error."""
+    global _POLICY_VERSION_CACHE
+    if _POLICY_VERSION_CACHE is not None:
+        return _POLICY_VERSION_CACHE
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "-C", str(Path.home() / ".claude"), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=2
+        )
+        _POLICY_VERSION_CACHE = result.stdout.strip() if result.returncode == 0 else "unknown"
+    except Exception:
+        _POLICY_VERSION_CACHE = "unknown"
+    return _POLICY_VERSION_CACHE or "unknown"
 
 
 def _classify_outcome(tool_response: dict) -> str:

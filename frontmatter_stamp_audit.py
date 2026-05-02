@@ -55,7 +55,7 @@ def parse_fields(content: str) -> dict[str, str]:
     return fields
 
 
-def audit(path: str, content: str) -> list[str]:
+def audit(_path: str, content: str) -> list[str]:
     fields = parse_fields(content)
     return [f for f in REQUIRED_FIELDS if f not in fields or not fields[f]]
 

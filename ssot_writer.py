@@ -595,20 +595,30 @@ def main() -> int:
             append_event(redact_event)
             update_index(redact_event)
 
-        # α.S10 step 3: emit writer_health every 10th PostToolUse.
-        if event_name == "PostToolUse":
-            _fire_counter += 1
-            if _fire_counter % 10 == 0:
-                _emit_health(session_id, cwd)
-
-        # Update last_write_ts in .writer_state.json after successful write.
+        # Update last_write_ts + persisted fire_counter in .writer_state.json.
+        # fire_counter is persisted because each PostToolUse hook invocation is a
+        # fresh subprocess — module-level counters reset every invocation.
         try:
             state = _load_writer_state()
             state["last_write_ts"] = event.get("ts") or _now_iso()
             state["last_known_seq"] = state.get("last_known_seq", 0) + 1
+            if event_name == "PostToolUse":
+                fc = state.get("fire_counter", 0) + 1
+                state["fire_counter"] = fc
             _save_writer_state(state)
         except Exception:
             pass
+
+        # α.S10 step 3: emit writer_health every 10th PostToolUse.
+        # Read persisted fire_counter to detect the 10th across subprocess boundaries.
+        if event_name == "PostToolUse":
+            try:
+                state2 = _load_writer_state()
+                fc = state2.get("fire_counter", 0)
+                if fc % 10 == 0:
+                    _emit_health(session_id, cwd)
+            except Exception:
+                pass
 
     except Exception as e:
         # Catch-all: any uncaught exception MUST NOT abort tool call.

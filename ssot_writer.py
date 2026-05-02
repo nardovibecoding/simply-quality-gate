@@ -409,6 +409,15 @@ def handle_post_tool_use(payload: dict) -> dict:
     if err:
         metadata["error_class"] = str(err)[:200]
 
+    # B5a: agent-decision metadata (parent-agent, params hash, policy ver, delegation depth).
+    metadata["parent_agent_id"] = payload.get("parent_tool_use_id")
+    metadata["parameters_hash"] = _hash_args(tool_input)
+    metadata["policy_version"] = _claude_md_policy_version()
+    try:
+        metadata["delegation_depth"] = int(os.environ.get("CLAUDE_AGENT_DEPTH", "0"))
+    except (ValueError, TypeError):
+        metadata["delegation_depth"] = None
+
     # Measure flush time (D9/D8 observability).
     t0 = time.monotonic_ns()
     event = build_event(

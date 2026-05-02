@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# Hook O2 (PILOT, log-only): comment-vs-code AND/OR drift audit.
+# Hook D17: comment-vs-code AND/OR drift audit (PROMOTED 2026-05-02 from log-only pilot to block-on-mismatch).
 # Created: 2026-05-02 — after vps_sync P2 label-vs-code drift incident.
+# Promoted: 2026-05-02 16:35 HKT after H11 word-count gate eliminated 100% of FP shapes
+# in 14h backtest (8 hits → 2 TP / 6 FP under H0; 2 TP / 0 FP under H11).
 #
 # Source: discussion 2026-05-02. Comment block at vps_sync.sh:44-46 said
 #   "if >DIVERGENCE_ALERT commits ahead AND no successful push in last hour"
@@ -8,14 +10,20 @@
 # the snapshot still claimed "P2 hardened" because /s read the comment label,
 # not the enforcement clause.
 #
-# Behavior: scan staged diff for ADDED comment lines containing the words
-# " AND " or " OR " in a clause-joining context, then check whether the added
-# code lines in the same file contain matching && or || operators. Mismatches
-# are appended to ~/.claude/scripts/state/comment-code-audit.jsonl for
-# eyeball review. NEVER blocks the commit during pilot. After 30d FP-rate
-# review, promote to block-on-mismatch (or downgrade if too noisy).
+# H11 detection rule (each side of AND/OR conjunction needs ≥3 substantive words):
+#  - Aggregate consecutive added comment lines into a BLOCK (handles AND-at-EOL multi-line).
+#  - Find first " AND " / " OR " conjunction in block (case-insensitive, word-bounded).
+#  - Split block at conjunction position; count substantive words on each side.
+#  - Both sides must have ≥3 words → boolean clause-pair shape (not English verb-list).
+#  - Then check: code-block in same file diff lacks `&&` / `||` (or `and` / `or` keywords).
+#
+# Bypass: include `[skip-comment-audit=<reason>]` in commit message subject. Logged.
 #
 # Trigger: PreToolUse Bash on `git commit`. Cheap; only reads `git diff --cached`.
+# Cross-references:
+#  - rules/disciplines/comment-vs-code-drift.md (D17 — same logic at /ship LAND via RC-11)
+#  - rules/disciplines/_index.md (D17 row)
+#  - skills/ship/phases/common/realization-checks.md (RC-9 — LAND-time twin)
 import json
 import os
 import pathlib
@@ -25,14 +33,26 @@ import sys
 import time
 
 LOG = pathlib.Path.home() / ".claude" / "scripts" / "state" / "comment-code-audit.jsonl"
+SKIP_LOG = pathlib.Path.home() / ".claude" / "scripts" / "state" / "comment-code-audit-skips.jsonl"
 SUPPORTED_EXT = {".sh", ".py", ".ts", ".tsx", ".js", ".jsx", ".bash", ".zsh"}
 COMMENT_PREFIX = re.compile(r"^\s*(#|//|\*)\s?")
-# match " AND " / " OR " (caps or mixed) used as English clause join, not as
-# part of code identifiers (so we drop matches that are inside backticks).
-JOIN_AND = re.compile(r"\b[Aa][Nn][Dd]\b")
-JOIN_OR = re.compile(r"\b[Oo][Rr]\b")
-HAS_AND_OP = re.compile(r"&&|\band\b")  # bash/python both
+# AND/OR matchers — case-insensitive, word-bounded (\b ensures we don't match inside identifiers like "PANDA")
+JOIN_AND = re.compile(r"\b(?:AND|And|and)\b")
+JOIN_OR = re.compile(r"\b(?:OR|Or|or)\b")
+HAS_AND_OP = re.compile(r"&&|\band\b")  # bash/python boolean operators
 HAS_OR_OP = re.compile(r"\|\||\bor\b")
+WORD = re.compile(r"\b\w+\b")
+MIN_SIDE_WORDS = 3   # H11 threshold — both sides of AND/OR conjunction must have ≥3 words
+
+
+def words_count(s: str) -> int:
+    """Count substantive words (alphanumeric tokens, excluding pure-punctuation)."""
+    return len(WORD.findall(s))
+
+
+def strip_comment_marker(line: str) -> str:
+    """Strip leading whitespace + #/// marker from a comment line."""
+    return COMMENT_PREFIX.sub("", line, count=1).rstrip()
 
 
 def get_staged_diff() -> str:
@@ -49,53 +69,133 @@ def get_staged_diff() -> str:
 
 
 def parse_hunks(diff: str):
-    """Yield (file_path, added_comment_lines, added_code_lines) per file."""
+    """Yield (file_path, comment_blocks, added_code_lines) per file.
+
+    A 'comment_block' is a list of consecutive added comment lines (joined
+    later into one logical paragraph for clause-pair detection).
+    """
     cur_file = None
-    cmts: list[str] = []
+    blocks: list[list[str]] = []
+    cur_block: list[str] = []
     code: list[str] = []
+
+    def flush_block():
+        if cur_block:
+            blocks.append(cur_block.copy())
+            cur_block.clear()
+
     for line in diff.splitlines():
         if line.startswith("+++ b/"):
+            flush_block()
             if cur_file:
-                yield cur_file, cmts, code
+                yield cur_file, blocks, code
             cur_file = line[6:]
-            cmts, code = [], []
+            blocks = []
+            cur_block = []
+            code = []
+        elif line.startswith("@@ "):
+            # hunk header — break comment-block continuity
+            flush_block()
         elif line.startswith("+") and not line.startswith("+++"):
             payload = line[1:]
-            stripped = payload.strip()
-            if not stripped:
+            if not payload.strip():
+                # blank line breaks comment-block continuity
+                flush_block()
                 continue
             if COMMENT_PREFIX.match(payload):
-                cmts.append(payload)
+                cur_block.append(payload)
             else:
+                flush_block()
                 code.append(payload)
+        else:
+            # context / removal lines — break block continuity
+            flush_block()
+    flush_block()
     if cur_file:
-        yield cur_file, cmts, code
+        yield cur_file, blocks, code
 
 
-def audit_hunk(file_path: str, cmts: list[str], code: list[str]) -> list[dict]:
+def audit_block_text(block_text: str, code_blob: str) -> list[dict]:
+    """Return findings for a single comment block joined into one paragraph.
+
+    H11: each side of the first AND/OR conjunction must have ≥MIN_SIDE_WORDS words.
+    """
+    findings: list[dict] = []
+    has_and_op = bool(HAS_AND_OP.search(code_blob))
+    has_or_op = bool(HAS_OR_OP.search(code_blob))
+
+    if len(block_text.split()) < 6:
+        return findings  # too short for any meaningful clause-pair
+
+    for kind, pattern, has_op in [
+        ("comment-AND-no-code-AND", JOIN_AND, has_and_op),
+        ("comment-OR-no-code-OR", JOIN_OR, has_or_op),
+    ]:
+        if has_op:
+            continue
+        m = pattern.search(block_text)
+        if not m:
+            continue
+        left = block_text[:m.start()]
+        right = block_text[m.end():]
+        if words_count(left) >= MIN_SIDE_WORDS and words_count(right) >= MIN_SIDE_WORDS:
+            findings.append({
+                "kind": kind,
+                "block": block_text[:300],
+                "left_words": words_count(left),
+                "right_words": words_count(right),
+            })
+    return findings
+
+
+def audit_file(file_path: str, blocks: list[list[str]], code: list[str]) -> list[dict]:
     findings: list[dict] = []
     ext = pathlib.Path(file_path).suffix.lower()
     if ext not in SUPPORTED_EXT:
         return findings
     code_blob = "\n".join(code)
-    has_and = bool(HAS_AND_OP.search(code_blob))
-    has_or = bool(HAS_OR_OP.search(code_blob))
-    for c in cmts:
-        # only consider comment lines that look clause-joining (have a verb-like context)
-        # cheap heuristic: contains " AND " / " OR " AND has at least 4 words
-        if len(c.split()) < 4:
-            continue
-        if JOIN_AND.search(c) and not has_and:
-            findings.append({
-                "kind": "comment-AND-no-code-AND",
-                "comment": c.strip()[:200],
-            })
-        if JOIN_OR.search(c) and not has_or:
-            findings.append({
-                "kind": "comment-OR-no-code-OR",
-                "comment": c.strip()[:200],
-            })
+    for block in blocks:
+        # join multi-line comment block into one paragraph
+        block_text = " ".join(strip_comment_marker(line) for line in block).strip()
+        for fnd in audit_block_text(block_text, code_blob):
+            fnd["file"] = file_path
+            findings.append(fnd)
     return findings
+
+
+def extract_commit_message(cmd: str) -> str:
+    m = re.search(r"-m\s+(['\"])(.+?)\1", cmd, re.DOTALL)
+    if m:
+        return m.group(2)
+    m = re.search(r"--message[= ]+(['\"])(.+?)\1", cmd, re.DOTALL)
+    if m:
+        return m.group(2)
+    return ""
+
+
+def log_skip(reason: str, findings: list[dict]) -> None:
+    SKIP_LOG.parent.mkdir(parents=True, exist_ok=True)
+    rec = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "reason": reason,
+        "cwd": os.getcwd(),
+        "findings_count": len(findings),
+    }
+    with open(SKIP_LOG, "a") as fh:
+        fh.write(json.dumps(rec) + "\n")
+
+
+def log_block(findings: list[dict], decision: str) -> None:
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    rec = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "cwd": os.getcwd(),
+        "decision": decision,
+        "findings": findings,
+        "mode": "block-on-mismatch",
+    }
+    with open(LOG, "a") as fh:
+        fh.write(json.dumps(rec) + "\n")
 
 
 def main() -> None:
@@ -114,24 +214,36 @@ def main() -> None:
         sys.exit(0)
 
     all_findings: list[dict] = []
-    for f, cmts, code in parse_hunks(diff):
-        for fnd in audit_hunk(f, cmts, code):
-            fnd["file"] = f
-            all_findings.append(fnd)
+    for f, blocks, code in parse_hunks(diff):
+        all_findings.extend(audit_file(f, blocks, code))
 
     if not all_findings:
         sys.exit(0)
 
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    rec = {
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "cwd": os.getcwd(),
-        "findings": all_findings,
-        "mode": "log-only-pilot",
-    }
-    with open(LOG, "a") as fh:
-        fh.write(json.dumps(rec) + "\n")
-    # Pilot: never block. After 30d, promote.
+    msg = extract_commit_message(cmd)
+    skip_match = re.search(r"\[skip-comment-audit=([^\]]+)\]", msg)
+    if skip_match:
+        log_skip(skip_match.group(1), all_findings)
+        sys.exit(0)
+
+    # Block the commit. Output JSON decision per Claude hook contract.
+    log_block(all_findings, decision="block")
+    fingerprints = []
+    for f in all_findings[:5]:
+        fingerprints.append(f"  • {f['file']}: {f['kind']}")
+        fingerprints.append(f"    block: {f['block'][:140]}...")
+    extra = f"\n  ... +{len(all_findings) - 5} more" if len(all_findings) > 5 else ""
+    reason = (
+        f"D17 comment-vs-code drift detected: comment uses 'AND'/'OR' clause-pair "
+        f"({all_findings[0]['left_words']}+{all_findings[0]['right_words']} words) "
+        f"but code in same file lacks matching boolean operator.\n\n"
+        + "\n".join(fingerprints) + extra +
+        "\n\nFix: implement the missing clause OR rephrase the comment to verb-list shape.\n"
+        "Bypass: add `[skip-comment-audit=<reason>]` to commit message subject "
+        "(logged to ~/.claude/scripts/state/comment-code-audit-skips.jsonl).\n"
+        "Source: rules/disciplines/comment-vs-code-drift.md (D17)."
+    )
+    print(json.dumps({"decision": "block", "reason": reason}))
     sys.exit(0)
 
 

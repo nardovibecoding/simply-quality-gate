@@ -74,6 +74,10 @@ _TRIGGER_PATTERNS = [
     # London/Hel/bot running status
     r"\b(both\s+bots|london|hel)\s+(running|live|wired|done|respec)\b",
     r"\bis\s+the\s+(london|hel).{0,30}(done|wired|live|respec)\b",
+    # Typo-tolerant: "is the <word> done/wired/respec" (covers "lonodn" typos)
+    r"\bis\s+the\s+\w{3,15}\s+(done|wired|shipped|live|complete|respec)\b",
+    # Question-end: "committed, wired?" or just "wired?"
+    r"\bwired\s*[?/]",
 ]
 
 _OVERRIDE_PATTERNS = [

@@ -61,14 +61,15 @@ def strip_comment_marker(line: str) -> str:
     return COMMENT_PREFIX.sub("", line, count=1).rstrip()
 
 
-def get_staged_diff() -> str:
+def get_diff(range_spec: str | None = None) -> str:
+    """Return unified diff. range_spec=None → staged (`--cached`); else `git diff <range>`."""
+    args = ["git", "diff", "-U0", "--no-color"]
+    if range_spec is None:
+        args.append("--cached")
+    else:
+        args.append(range_spec)
     try:
-        out = subprocess.run(
-            ["git", "diff", "--cached", "-U0", "--no-color"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+        out = subprocess.run(args, capture_output=True, text=True, timeout=5)
         return out.stdout if out.returncode == 0 else ""
     except Exception:
         return ""

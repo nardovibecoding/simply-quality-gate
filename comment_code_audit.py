@@ -225,7 +225,46 @@ def log_block(findings: list[dict], decision: str) -> None:
         fh.write(json.dumps(rec) + "\n")
 
 
+def run_cli(range_spec: str, strict: bool) -> None:
+    """CLI mode for /ship RC-9 LAND-time twin. Exits nonzero on findings when --strict."""
+    diff = get_diff(range_spec)
+    if not diff:
+        print(f"comment_code_audit: empty diff for range '{range_spec}'", file=sys.stderr)
+        sys.exit(0)
+    findings: list[dict] = []
+    for f, blocks, code in parse_hunks(diff):
+        findings.extend(audit_file(f, blocks, code))
+    if not findings:
+        print(f"comment_code_audit: 0 findings on {range_spec}", file=sys.stderr)
+        sys.exit(0)
+    print(
+        f"comment_code_audit: {len(findings)} D17 finding(s) on {range_spec}",
+        file=sys.stderr,
+    )
+    for fnd in findings[:10]:
+        print(
+            f"  • {fnd['file']}: {fnd['kind']} "
+            f"({fnd['left_words']}+{fnd['right_words']} words)",
+            file=sys.stderr,
+        )
+        print(f"    {fnd['block'][:160]}", file=sys.stderr)
+    if len(findings) > 10:
+        print(f"  ... +{len(findings) - 10} more", file=sys.stderr)
+    log_block(findings, decision="cli-strict" if strict else "cli-report")
+    sys.exit(1 if strict else 0)
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--diff", dest="range_spec", default=None,
+                        help="Git range (e.g. 'main..HEAD'). CLI mode for /ship RC-9.")
+    parser.add_argument("--strict", action="store_true",
+                        help="Exit nonzero on findings (block phase close).")
+    args, _ = parser.parse_known_args()
+    if args.range_spec is not None:
+        run_cli(args.range_spec, args.strict)
+        return
+
     try:
         data = json.loads(sys.stdin.read())
     except Exception:
@@ -236,7 +275,7 @@ def main() -> None:
     if not re.search(r"\bgit\s+commit\b", cmd):
         sys.exit(0)
 
-    diff = get_staged_diff()
+    diff = get_diff(None)
     if not diff:
         sys.exit(0)
 

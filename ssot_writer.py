@@ -162,11 +162,36 @@ def handle_precompact(payload: dict) -> dict:
     )
 
 
+def handle_session_save(payload: dict) -> dict:
+    # Emit kind=session.save when /s skill completes a checkpoint save.
+    # Invoked by /s SKILL.md Step 2 agent via:
+    #   echo '<json>' | python3 ~/.claude/hooks/ssot_writer.py
+    # where <json> = {"hook_event_name":"SessionSave","session_id":"...","metadata":{...}}
+    # Placed AFTER the ALREADY_SAVED guard in Step 0 so dup /s calls don't double-write.
+    # Fields: chars_before (int|null), topic_slug (str|null),
+    #         lessons_filed_count (int|null), source ("/s").
+    return build_event(
+        kind="session.save",
+        actor="claude",
+        subject="session",
+        session_id=payload.get("session_id"),
+        cwd=payload.get("cwd") or os.getcwd(),
+        outcome="ok",
+        metadata={
+            "chars_before": payload.get("chars_before"),
+            "topic_slug": payload.get("topic_slug"),
+            "lessons_filed_count": payload.get("lessons_filed_count"),
+            "source": payload.get("source", "/s"),
+        },
+    )
+
+
 _DISPATCH = {
     "PostToolUse": handle_post_tool_use,
     "UserPromptSubmit": handle_user_prompt_submit,
     "Stop": handle_stop,
     "PreCompact": handle_precompact,
+    "SessionSave": handle_session_save,
 }
 
 

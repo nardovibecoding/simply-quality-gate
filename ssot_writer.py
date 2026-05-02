@@ -53,7 +53,7 @@ if str(_HOOKS_DIR) not in sys.path:
     sys.path.insert(0, str(_HOOKS_DIR))
 
 try:
-    from _ssot_lib import append_event, build_event
+    from _ssot_lib import append_event, build_event, update_index
     from _ssot_redactor import redact_field
 except Exception as e:
     sys.stderr.write(f"ssot_writer: import failed: {e}\n")

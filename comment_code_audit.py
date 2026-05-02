@@ -153,6 +153,24 @@ def audit_block_text(block_text: str, code_blob: str) -> list[dict]:
     return findings
 
 
+def is_metadata_block(block_lines: list[str]) -> bool:
+    """Detector metadata / module-header docstrings have ≥3 KV-shaped lines.
+    Example pattern that triggers suppression:
+        # detector: foo_scan
+        # emits_types: [a, b]
+        # covers: [F1, F10]
+        # severity: HIGH
+    """
+    kv_count = 0
+    for line in block_lines:
+        stripped = strip_comment_marker(line)
+        if META_KV_LINE.match(stripped):
+            kv_count += 1
+            if kv_count >= MIN_META_KV_LINES:
+                return True
+    return False
+
+
 def audit_file(file_path: str, blocks: list[list[str]], code: list[str]) -> list[dict]:
     findings: list[dict] = []
     ext = pathlib.Path(file_path).suffix.lower()
@@ -160,6 +178,8 @@ def audit_file(file_path: str, blocks: list[list[str]], code: list[str]) -> list
         return findings
     code_blob = "\n".join(code)
     for block in blocks:
+        if is_metadata_block(block):
+            continue  # detector docstring / module header — not a clause-pair claim
         # join multi-line comment block into one paragraph
         block_text = " ".join(strip_comment_marker(line) for line in block).strip()
         for fnd in audit_block_text(block_text, code_blob):

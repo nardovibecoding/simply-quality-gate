@@ -188,12 +188,43 @@ def handle_session_save(payload: dict) -> dict:
     )
 
 
+def handle_permission_request(payload: dict) -> dict:
+    # Emit kind=session.permission_request with tool_name + first-path from tool_input.
+    # PermissionRequest payload mirrors PreToolUse: tool_name + tool_input are present.
+    # [GAP — exact PermissionRequest stdin payload field names inferred from PreToolUse shape
+    # (hook_base.py:35-36, hook-dev SKILL.md:316) + changelog 2.0.45; verify tool_name/
+    # tool_args_path non-null after Bernard triggers a permission-required tool in next session.]
+    tool_name = payload.get("tool_name") or "unknown"
+    tool_input = payload.get("tool_input") or {}
+    # Extract the primary path/command field — covers Read/Edit/Write (file_path) + Bash (command).
+    tool_args_path = (
+        tool_input.get("file_path")
+        or tool_input.get("command")
+        or tool_input.get("path")
+        or None
+    )
+    return build_event(
+        kind="session.permission_request",
+        actor="claude",
+        subject=tool_name,
+        session_id=payload.get("session_id"),
+        cwd=payload.get("cwd") or os.getcwd(),
+        outcome="ok",
+        metadata={
+            "tool_name": tool_name,
+            "tool_args_path": str(tool_args_path)[:200] if tool_args_path else None,
+            "decision": payload.get("decision"),
+        },
+    )
+
+
 _DISPATCH = {
     "PostToolUse": handle_post_tool_use,
     "UserPromptSubmit": handle_user_prompt_submit,
     "Stop": handle_stop,
     "PreCompact": handle_precompact,
     "SessionSave": handle_session_save,
+    "PermissionRequest": handle_permission_request,
 }
 
 

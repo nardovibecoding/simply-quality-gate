@@ -215,6 +215,109 @@ def append_event(event: dict) -> bool:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Index update — incremental aggregator (α.S0)
+# ──────────────────────────────────────────────────────────────────────────────
+_INDEX_LOCK = SSOT_DIR / "index.lock"
+_MAX_INDEX_BYTES = 2048  # D8 (F4.2) runtime guard — hard cap on ship_status.json size
+
+
+def _extract_slug(cwd: str) -> str:
+    """Extract ship slug from cwd path (e.g. ~/.ship/ssot-completion/ → ssot-completion)."""
+    import re
+    if cwd:
+        m = re.search(r"\.ship/([^/]+)", cwd)
+        if m:
+            return m.group(1)
+    return "_global"
+
+
+def update_index(
+    event: dict,
+    status_path: "Path | None" = None,
+    state_path: "Path | None" = None,
+) -> None:
+    """Incrementally update ship_status.json and live_state.json from one event.
+
+    Atomic write via tmp+rename. Fire-and-forget: never raises (REQ-13).
+    D8 (F4.2): asserts payload < _MAX_INDEX_BYTES before writing.
+    D1 (F1.4): called only from ssot_writer.py append path (single writer).
+    """
+    try:
+        if status_path is None:
+            status_path = SSOT_DIR / "ship_status.json"
+        if state_path is None:
+            state_path = SSOT_DIR / "live_state.json"
+
+        SSOT_DIR.mkdir(parents=True, exist_ok=True)
+
+        # ── ship_status.json ──────────────────────────────────────────────────
+        # Load existing or init.
+        existing: dict = {}
+        if status_path.exists():
+            try:
+                existing = json.loads(status_path.read_text(encoding="utf-8"))
+            except Exception:
+                existing = {}
+
+        slugs: dict = existing.get("slugs", {})
+        slug = _extract_slug(event.get("cwd", ""))
+        bucket = slugs.get(slug, {"count": 0})
+        ts = event.get("ts", "")
+        if ts > bucket.get("last_ts", ""):
+            bucket["last_ts"] = ts
+            bucket["last_outcome"] = event.get("outcome", "ok")
+            bucket["host"] = event.get("host", "mac")
+            bucket["kind"] = event.get("kind", "")
+        bucket["count"] = bucket.get("count", 0) + 1
+        slugs[slug] = bucket
+
+        # Cap to top-20 slugs by last_ts to bound growth.
+        if len(slugs) > 20:
+            top = sorted(slugs.items(), key=lambda x: x[1].get("last_ts", ""), reverse=True)[:20]
+            slugs = {k: v for k, v in top}
+
+        total_events: int = existing.get("total_events", 0) + 1
+        new_status = {"slugs": slugs, "total_events": total_events}
+
+        payload = json.dumps(new_status, separators=(",", ":"), ensure_ascii=False)
+        # D8 runtime guard: assert payload fits in cap before writing.
+        if len(payload.encode("utf-8")) > _MAX_INDEX_BYTES:
+            sys.stderr.write(f"ssot:update_index: ship_status payload {len(payload)} > {_MAX_INDEX_BYTES} — skipping write\n")
+        else:
+            _atomic_write(status_path, payload)
+
+        # ── live_state.json ───────────────────────────────────────────────────
+        live = {
+            "ts": ts,
+            "kind": event.get("kind", ""),
+            "subject": event.get("subject", ""),
+            "host": event.get("host", "mac"),
+            "session_id": event.get("session_id", ""),
+            "slug": slug,
+        }
+        live_payload = json.dumps(live, separators=(",", ":"), ensure_ascii=False)
+        if len(live_payload.encode("utf-8")) <= _MAX_INDEX_BYTES:
+            _atomic_write(state_path, live_payload)
+
+    except Exception as e:
+        sys.stderr.write(f"ssot:update_index: {e}\n")
+
+
+def _atomic_write(path: "Path", content: str) -> None:
+    """Write content to path atomically via tmp+rename."""
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(content, encoding="utf-8")
+        tmp.rename(path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Event factory
 # ──────────────────────────────────────────────────────────────────────────────
 def _now_iso_ms() -> str:

@@ -24,6 +24,7 @@
 #  - rules/disciplines/comment-vs-code-drift.md (D17 — same logic at /ship LAND via RC-11)
 #  - rules/disciplines/_index.md (D17 row)
 #  - skills/ship/phases/common/realization-checks.md (RC-9 — LAND-time twin)
+import argparse
 import json
 import os
 import pathlib

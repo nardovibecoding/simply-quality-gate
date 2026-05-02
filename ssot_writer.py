@@ -143,10 +143,30 @@ def handle_stop(payload: dict) -> dict:
     )
 
 
+def handle_precompact(payload: dict) -> dict:
+    # Emit kind=session.precompact with chars_before + context_pct from payload.
+    # Field names per Claude Code PreCompact payload spec. If field names differ
+    # in practice, values will be None — [GAP — exp: verify via ssot.jsonl tail
+    # after Bernard triggers /compact; update field names if null].
+    return build_event(
+        kind="session.precompact",
+        actor="claude",
+        subject="compact",
+        session_id=payload.get("session_id"),
+        cwd=payload.get("cwd") or os.getcwd(),
+        outcome="ok",
+        metadata={
+            "chars_before": payload.get("chars_before"),
+            "context_pct": payload.get("context_pct"),
+        },
+    )
+
+
 _DISPATCH = {
     "PostToolUse": handle_post_tool_use,
     "UserPromptSubmit": handle_user_prompt_submit,
     "Stop": handle_stop,
+    "PreCompact": handle_precompact,
 }
 
 

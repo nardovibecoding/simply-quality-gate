@@ -299,6 +299,27 @@ def update_index(
         if len(live_payload.encode("utf-8")) <= _MAX_INDEX_BYTES:
             _atomic_write(state_path, live_payload)
 
+        # ── α.S10 F.2: heartbeat sidecar — persist .writer_state.json ────────
+        # When event is kind=writer_health, update last_write_ts + last_known_seq
+        # so _check_resume() can detect gaps on next fire.  Fire-and-forget.
+        if event.get("kind") == "writer_health":
+            _writer_state_path = SSOT_DIR / ".writer_state.json"
+            try:
+                existing_ws: dict = {}
+                if _writer_state_path.exists():
+                    try:
+                        existing_ws = json.loads(_writer_state_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        existing_ws = {}
+                existing_ws["last_write_ts"] = ts or _now_iso_ms()
+                existing_ws["last_known_seq"] = existing_ws.get("last_known_seq", 0) + 1
+                existing_ws.setdefault("error_count_24h", 0)
+                existing_ws.setdefault("fsync_count", 0)
+                ws_payload = json.dumps(existing_ws, separators=(",", ":"), ensure_ascii=False)
+                _atomic_write(_writer_state_path, ws_payload)
+            except Exception as ws_err:
+                sys.stderr.write(f"ssot:update_index:writer_state: {ws_err}\n")
+
     except Exception as e:
         sys.stderr.write(f"ssot:update_index: {e}\n")
 

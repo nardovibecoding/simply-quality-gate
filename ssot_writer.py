@@ -250,6 +250,7 @@ def main() -> int:
 
         event = handler(payload)
         append_event(event)  # success/failure both result in exit 0 (REQ-13)
+        update_index(event)  # α.S0: incremental index update; fire-and-forget
     except Exception as e:
         # Catch-all: any uncaught exception MUST NOT abort tool call.
         sys.stderr.write(f"ssot_writer: unexpected: {e}\n")

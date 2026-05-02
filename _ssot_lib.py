@@ -43,6 +43,17 @@ LOCK_MAX_RETRIES = 10  # 5ms × 10 = 50ms cap (REQ-07)
 
 SCHEMA_VERSION = 1
 
+
+def detect_session_id(explicit: str | None = None) -> str:
+    """Return explicit session id, then runtime env fallbacks."""
+    return (
+        explicit
+        or os.environ.get("CLAUDE_SESSION_ID")
+        or os.environ.get("CODEX_THREAD_ID")
+        or os.environ.get("CODEX_CI")
+        or "system"
+    )
+
 # ──────────────────────────────────────────────────────────────────────────────
 # ULID generation (Crockford-base32, 26 chars, time-ordered)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -366,7 +377,7 @@ def build_event(
     return {
         "ts": _now_iso_ms(),
         "host": detect_host(),
-        "session_id": session_id or os.environ.get("CLAUDE_SESSION_ID", "system"),
+        "session_id": detect_session_id(session_id),
         "event_id": f"evt_{generate_ulid()}",
         "parent_event_id": parent_event_id,
         "correlation_id": os.environ.get("SSOT_CORRELATION_ID"),

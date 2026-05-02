@@ -56,6 +56,9 @@ def parse_fm(content: str) -> tuple[dict[str, str], str, str]:
 
 
 def detect_session_id() -> str:
+    codex_thread_id = os.environ.get("CODEX_THREAD_ID", "")
+    if codex_thread_id:
+        return codex_thread_id
     try:
         return json.loads(STATUSLINE.read_text()).get("session_id", "") or ""
     except Exception:
@@ -63,7 +66,8 @@ def detect_session_id() -> str:
 
 
 def detect_writer_runtime() -> tuple[str, str]:
-    if os.environ.get("CODEX_SESSION") or os.environ.get("CODEX_CLI_VERSION"):
+    if (os.environ.get("CODEX_SESSION") or os.environ.get("CODEX_CLI_VERSION")
+            or os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_CI")):
         v = os.environ.get("CODEX_CLI_VERSION", "unknown")
         return "codex", f"codex-cli-{v}"
     return "claude-code", os.environ.get("CLAUDE_RUNTIME_OVERRIDE") or CANONICAL_RUNTIME

@@ -187,13 +187,6 @@ def _save_writer_state(state: dict) -> None:
         sys.stderr.write(f"ssot_writer:_save_writer_state: {e}\n")
 
 
-def _now_iso_local() -> str:
-    """ISO 8601 UTC ms-precision string. Local copy to avoid circular import w/ _ssot_lib._now_iso_ms."""
-    t = time.time()
-    ms = int((t - int(t)) * 1000)
-    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + f".{ms:03d}Z"
-
-
 def _check_resume(session_id: str | None, cwd: str) -> None:
     """Emit kind=writer_resume if gap since last_write_ts >= 30s. Never raises.
 

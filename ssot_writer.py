@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # @bigd-hook-meta
 # name: ssot_writer
-# fires_on: PostToolUse, UserPromptSubmit, Stop, PreCompact
+# fires_on: PostToolUse, UserPromptSubmit, Stop, PreCompact, PermissionRequest
 # relevant_intents: [all]
 # irrelevant_intents: []
 # cost_score: 1

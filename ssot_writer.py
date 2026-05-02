@@ -19,6 +19,8 @@ Behavior:
 - UserPromptSubmit → emit kind=user_turn (subject="prompt")
 - Stop → emit kind=assistant_turn (subject="turn") + REQ-16 orphan recovery
   if a previous assistant_turn has no matching Stop within session.
+- PreCompact → emit kind=session.precompact (subject="compact") with
+  metadata.chars_before and metadata.context_pct from payload.
 
 Fire-and-forget: every code path exits 0 (REQ-13). Never block caller >50ms (REQ-08).
 

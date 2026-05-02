@@ -21,6 +21,8 @@ Behavior:
   if a previous assistant_turn has no matching Stop within session.
 - PreCompact → emit kind=session.precompact (subject="compact") with
   metadata.chars_before and metadata.context_pct from payload.
+- PermissionRequest → emit kind=session.permission_request (subject=tool_name)
+  with metadata.tool_name and metadata.tool_args_path (file_path or command from tool_input).
 
 Fire-and-forget: every code path exits 0 (REQ-13). Never block caller >50ms (REQ-08).
 

@@ -13,7 +13,6 @@ jq-via-Bash with timestamp/kind filter returns 5 rows for ~5% of the cost.
 Warn-only. Logs to ledger. Ratchet to block after 7d if ledger clean.
 """
 import json
-import os
 import sys
 from pathlib import Path
 from datetime import datetime, timezone

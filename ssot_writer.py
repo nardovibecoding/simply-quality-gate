@@ -12,7 +12,7 @@
 Slice S2 of /ship ssot-log. Spec REQ-01..REQ-16 + Plan §S2.
 
 Invocation: registered in ~/.claude/settings.json under PostToolUse,
-UserPromptSubmit, Stop. Reads JSON payload from stdin.
+UserPromptSubmit, Stop, PreCompact. Reads JSON payload from stdin.
 
 Behavior:
 - PostToolUse → emit kind=tool_call (subject=<tool_name>)

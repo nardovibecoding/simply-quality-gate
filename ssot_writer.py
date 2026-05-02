@@ -187,6 +187,14 @@ def _save_writer_state(state: dict) -> None:
         sys.stderr.write(f"ssot_writer:_save_writer_state: {e}\n")
 
 
+def _runtime_actor() -> str:
+    """Return the assistant runtime actor for emitted SSOT rows."""
+    if (os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_CI")
+            or os.environ.get("CODEX_SESSION") or os.environ.get("CODEX_CLI_VERSION")):
+        return "codex"
+    return "claude"
+
+
 def _check_resume(session_id: str | None, cwd: str) -> None:
     """Emit kind=writer_resume if gap since last_write_ts >= 30s. Never raises.
 
@@ -221,7 +229,7 @@ def _check_resume(session_id: str | None, cwd: str) -> None:
         missed_estimate = max(0, int(gap_s / 10) - 1)
         event = build_event(
             kind="writer_resume",
-            actor="claude",
+            actor=_runtime_actor(),
             subject="writer",
             session_id=session_id,
             cwd=cwd,
@@ -255,7 +263,7 @@ def _emit_health(session_id: str | None, cwd: str) -> None:
         total_fsync = state.get("fsync_count", 0)
         event = build_event(
             kind="writer_health",
-            actor="claude",
+            actor=_runtime_actor(),
             subject="writer",
             session_id=session_id,
             cwd=cwd,
@@ -307,7 +315,7 @@ def _emit_backpressure_if_needed(session_id: str | None, cwd: str,
                 return  # fail-quiet per R4
             event = build_event(
                 kind="writer_backpressure",
-                actor="claude",
+                actor=_runtime_actor(),
                 subject="writer",
                 session_id=session_id,
                 cwd=cwd,
@@ -381,7 +389,7 @@ def handle_post_tool_use(payload: dict) -> dict:
     t0 = time.monotonic_ns()
     event = build_event(
         kind="tool_call",
-        actor="claude",
+        actor=_runtime_actor(),
         subject=tool_name,
         session_id=payload.get("session_id"),
         cwd=payload.get("cwd") or os.getcwd(),
@@ -434,7 +442,7 @@ def handle_stop(payload: dict) -> dict:
     # assistant_turns lacking matching Stop fire and emit recovery events.
     return build_event(
         kind="assistant_turn",
-        actor="claude",
+        actor=_runtime_actor(),
         subject="turn",
         session_id=payload.get("session_id"),
         cwd=payload.get("cwd") or os.getcwd(),
@@ -452,7 +460,7 @@ def handle_precompact(payload: dict) -> dict:
     # after Bernard triggers /compact; update field names if null].
     return build_event(
         kind="session.precompact",
-        actor="claude",
+        actor=_runtime_actor(),
         subject="compact",
         session_id=payload.get("session_id"),
         cwd=payload.get("cwd") or os.getcwd(),
@@ -474,7 +482,7 @@ def handle_session_save(payload: dict) -> dict:
     #         lessons_filed_count (int|null), source ("/s").
     return build_event(
         kind="session.save",
-        actor="claude",
+        actor=_runtime_actor(),
         subject="session",
         session_id=payload.get("session_id"),
         cwd=payload.get("cwd") or os.getcwd(),
@@ -505,7 +513,7 @@ def handle_permission_request(payload: dict) -> dict:
     )
     return build_event(
         kind="session.permission_request",
-        actor="claude",
+        actor=_runtime_actor(),
         subject=tool_name,
         session_id=payload.get("session_id"),
         cwd=payload.get("cwd") or os.getcwd(),
@@ -574,7 +582,7 @@ def main() -> int:
         if matched_count > 0:
             redact_event = build_event(
                 kind="secret_redaction",
-                actor="claude",
+                actor=_runtime_actor(),
                 subject="writer",
                 session_id=session_id,
                 cwd=cwd,

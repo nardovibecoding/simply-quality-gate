@@ -43,9 +43,10 @@ def main():
 
     try:
         data = json.loads(STATUSLINE_JSON.read_text())
-        ctx_pct = float(data.get("context_window", {}).get("used_percentage", 0))
+        used_pct = data.get("context_window", {}).get("used_percentage", 0)
+        ctx_pct = float(used_pct or 0)
         file_session = data.get("session_id", "")
-    except (ValueError, OSError, KeyError):
+    except (TypeError, ValueError, OSError, KeyError):
         print("{}")
         return
 
